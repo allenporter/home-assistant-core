@@ -265,6 +265,63 @@ async def test_camera_ws_stream_failure(hass, auth, hass_ws_client):
     assert msg["error"]["message"].startswith("Nest API error")
 
 
+async def test_camera_api_stream_source(hass, auth, hass_client):
+    """Test an API call to fetch a stream source."""
+    expiration = utcnow()
+    auth.responses = [make_stream_url_response(expiration=expiration)]
+    await async_setup_camera(hass, DEVICE_TRAITS, auth=auth)
+
+    assert len(hass.states.async_all()) == 1
+    cam = hass.states.get("camera.my_camera")
+    assert cam is not None
+    assert cam.state == STATE_STREAMING
+    assert cam.attributes["frontend_stream_type"] == STREAM_TYPE_HLS
+
+    client = await hass_client()
+
+    response = await client.get("/api/nest/camera_source/camera.my_camera")
+    result = await response.json()
+    assert result == ""
+    assert response.status == HTTPStatus.OK, "Response not matched: %s" % response
+    # assert stream_source == "rtsp://some/url?auth=g.0.streamingToken"
+    # Assert expiration
+    assert False
+
+    response = await client.get("/api/nest/camera_source/camera.invalid-name")
+    assert response.status == HTTPStatus.NOT_FOUND
+    result = await response.json()
+    assert "message" in result
+    assert "No camera exists for entity" in result["message"]
+
+
+async def test_camera_api_stream_source_missing_trait(hass, auth, hass_client):
+    """Test a basic camera and fetch its live stream."""
+    traits = {
+        "sdm.devices.traits.Info": {
+            "customName": "My Camera",
+        },
+        "sdm.devices.traits.CameraImage": {
+            "maxImageResolution": {
+                "width": 800,
+                "height": 600,
+            }
+        },
+    }
+    await async_setup_camera(hass, traits, auth=auth)
+
+    assert len(hass.states.async_all()) == 1
+    cam = hass.states.get("camera.my_camera")
+    assert cam is not None
+
+    client = await hass_client()
+
+    response = await client.get("/api/nest/camera_source/camera.my_camera")
+    assert response.status == HTTPStatus.NOT_FOUND
+    result = await response.json()
+    assert "message" in result
+    assert "Camera does not have a stream source" in result["message"]
+
+
 async def test_camera_stream_missing_trait(hass, auth):
     """Test fetching a video stream when not supported by the API."""
     traits = {

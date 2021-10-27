@@ -3,10 +3,12 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import datetime
+from http import HTTPStatus
 import logging
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
 from google_nest_sdm.camera_traits import (
     CameraEventImageTrait,
     CameraImageTrait,
@@ -23,11 +25,16 @@ from haffmpeg.tools import IMAGE_JPEG
 from homeassistant.components.camera import SUPPORT_STREAM, Camera
 from homeassistant.components.camera.const import STREAM_TYPE_HLS, STREAM_TYPE_WEB_RTC
 from homeassistant.components.ffmpeg import async_get_image
+from homeassistant.components.http.view import HomeAssistantView
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError, PlatformNotReady
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.entity_platform import (
+    AddEntitiesCallback,
+    EntityPlatform,
+    async_get_current_platform,
+)
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import utcnow
 
@@ -41,12 +48,13 @@ PLACEHOLDER = Path(__file__).parent / "placeholder.png"
 # Used to schedule an alarm to refresh the stream before expiration
 STREAM_EXPIRATION_BUFFER = datetime.timedelta(seconds=30)
 
+SCAN_INTERVAL = datetime.timedelta(seconds=10)
+
 
 async def async_setup_sdm_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     """Set up the cameras."""
-
     subscriber = hass.data[DOMAIN][DATA_SUBSCRIBER]
     try:
         device_manager = await subscriber.async_get_device_manager()
@@ -54,7 +62,6 @@ async def async_setup_sdm_entry(
         raise PlatformNotReady from err
 
     # Fetch initial data so we have data when entities subscribe.
-
     entities = []
     for device in device_manager.devices.values():
         if (
@@ -63,6 +70,9 @@ async def async_setup_sdm_entry(
         ):
             entities.append(NestCamera(device))
     async_add_entities(entities)
+
+    platform = async_get_current_platform()
+    hass.http.register_view(NestCameraSourceView(platform))
 
 
 class NestCamera(Camera):
@@ -292,3 +302,34 @@ class NestCamera(Camera):
         except GoogleNestException as err:
             raise HomeAssistantError(f"Nest API error: {err}") from err
         return stream.answer_sdp
+
+
+def register(hass: HomeAssistant) -> None:
+    """Set up APIs."""
+
+
+class NestCameraSourceView(HomeAssistantView):
+    """Returns the stream source for an entity."""
+
+    url = "/api/nest/camera_source/{entity_id}"
+    name = "api:nest:camera_source"
+
+    def __init__(self, platform: EntityPlatform) -> None:
+        """Initialize NestCameraSourceView."""
+        self._platform = platform
+
+    async def get(self, request: web.Request, entity_id: str) -> web.StreamResponse:
+        """Start a GET request."""
+        #        hass = request.app["hass"]
+        if not (camera := self._platform.entities.get(entity_id)) or not isinstance(
+            camera, NestCamera
+        ):
+            return self.json_message(
+                f"No Nest Camera entity found for '{entity_id}'", HTTPStatus.NOT_FOUND
+            )
+        # XXX
+        result = {
+            "stream_source": "abc",
+            #            "expires_at": datetime.datetime.now()
+        }
+        return self.json(result)
