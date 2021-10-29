@@ -327,9 +327,12 @@ class NestCameraSourceView(HomeAssistantView):
             return self.json_message(
                 f"No Nest Camera entity found for '{entity_id}'", HTTPStatus.NOT_FOUND
             )
-        # XXX
-        result = {
-            "stream_source": "abc",
-            #            "expires_at": datetime.datetime.now()
-        }
+        source = await camera.stream_source()
+        if not source:
+            return self.json_message(
+                "Camera does not have stream source", HTTPStatus.NOT_FOUND
+            )
+        result = {"stream_source": source}
+        if camera._stream:
+            result["expires_at"] = str(camera._stream.expires_at)
         return self.json(result)
