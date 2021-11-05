@@ -111,13 +111,12 @@ async def test_setup_missing_subscriber_id(hass, caplog):
     config = copy.deepcopy(CONFIG)
     del config[DOMAIN]["subscriber_id"]
     with caplog.at_level(logging.ERROR, logger="homeassistant.components.nest"):
-        result = await async_setup_sdm(hass, config)
-        assert not result
+        assert await async_setup_sdm(hass, config)
         assert "Configuration option" in caplog.text
 
     entries = hass.config_entries.async_entries(DOMAIN)
     assert len(entries) == 1
-    assert entries[0].state is ConfigEntryState.NOT_LOADED
+    assert entries[0].state is ConfigEntryState.SETUP_ERROR
 
 
 async def test_empty_config(hass, caplog):

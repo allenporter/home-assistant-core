@@ -21,7 +21,11 @@ from homeassistant.const import (
     CONF_STRUCTURE,
 )
 from homeassistant.core import HomeAssistant
-from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.exceptions import (
+    ConfigEntryAuthFailed,
+    ConfigEntryNotReady,
+    InvalidStateError,
+)
 from homeassistant.helpers import (
     aiohttp_client,
     config_entry_oauth2_flow,
@@ -132,10 +136,6 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if CONF_PROJECT_ID not in config[DOMAIN]:
         return await async_setup_legacy(hass, config)
 
-    if CONF_SUBSCRIBER_ID not in config[DOMAIN]:
-        _LOGGER.error("Configuration option 'subscriber_id' required")
-        return False
-
     # For setup of ConfigEntry below
     hass.data[DOMAIN][DATA_NEST_CONFIG] = config[DOMAIN]
     project_id = config[DOMAIN][CONF_PROJECT_ID]
@@ -204,9 +204,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass, entry
         )
     )
-
     config = hass.data[DOMAIN][DATA_NEST_CONFIG]
-
+    # Newer integrations configure subscriber id from the config flow, and
+    # before that it was required by configuration.yaml
+    if not (
+        subscriber_id := entry.data.get(
+            CONF_SUBSCRIBER_ID, config.get(CONF_SUBSCRIBER_ID)
+        )
+    ):
+        raise InvalidStateError("Configuration option 'subscriber_id' required")
     session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
     auth = api.AsyncConfigEntryAuth(
         aiohttp_client.async_get_clientsession(hass),
@@ -215,7 +221,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config[CONF_CLIENT_SECRET],
     )
     subscriber = GoogleNestSubscriber(
-        auth, config[CONF_PROJECT_ID], config[CONF_SUBSCRIBER_ID]
+        auth,
+        config[CONF_PROJECT_ID],
+        subscriber_id,
     )
     callback = SignalUpdateCallback(hass)
     subscriber.set_update_callback(callback.async_handle_event)
