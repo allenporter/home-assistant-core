@@ -20,6 +20,7 @@ from google_nest_sdm.event import ImageEventBase
 from google_nest_sdm.exceptions import GoogleNestException
 from haffmpeg.tools import IMAGE_JPEG
 
+from homeassistant.components import webrtc
 from homeassistant.components.camera import SUPPORT_STREAM, Camera
 from homeassistant.components.camera.const import STREAM_TYPE_HLS, STREAM_TYPE_WEB_RTC
 from homeassistant.components.ffmpeg import async_get_image
@@ -128,6 +129,9 @@ class NestCamera(Camera):
             return None
         trait = self._device.traits[CameraLiveStreamTrait.NAME]
         if StreamingProtocol.WEB_RTC in trait.supported_protocols:
+            return STREAM_TYPE_WEB_RTC
+        # Prefer RTSP to WebRTC when loaded
+        if webrtc.DOMAIN in self.hass.config.components:
             return STREAM_TYPE_WEB_RTC
         return STREAM_TYPE_HLS
 
@@ -286,6 +290,15 @@ class NestCamera(Camera):
 
     async def async_handle_web_rtc_offer(self, offer_sdp: str) -> str:
         """Return the source of the stream."""
+        if CameraLiveStreamTrait.NAME not in self._device.traits:
+            if webrtc.DOMAIN not in self.hass.config.components:
+                raise HomeAssistantError("Camera does not support WebRTC")
+            stream_source = await self.stream_source()
+            if not stream_source:
+                raise HomeAssistantError("Camera has no stream source")
+            return await webrtc.async_offer_for_stream_source(
+                self.hass, offer_sdp, stream_source
+            )
         trait: CameraLiveStreamTrait = self._device.traits[CameraLiveStreamTrait.NAME]
         try:
             stream = await trait.generate_web_rtc_stream(offer_sdp)
