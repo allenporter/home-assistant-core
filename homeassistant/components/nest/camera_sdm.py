@@ -291,6 +291,12 @@ class NestCamera(Camera):
     async def async_handle_web_rtc_offer(self, offer_sdp: str) -> str:
         """Return the source of the stream."""
         if CameraLiveStreamTrait.NAME not in self._device.traits:
+            raise HomeAssistantError("Camera does not support live streams")
+        trait: CameraLiveStreamTrait = self._device.traits[CameraLiveStreamTrait.NAME]
+        if (
+            StreamingProtocol.WEB_RTC not in trait.supported_protocols
+            and StreamingProtocol.RTSP in trait.supported_protocols
+        ):
             if webrtc.DOMAIN not in self.hass.config.components:
                 raise HomeAssistantError("Camera does not support WebRTC")
             stream_source = await self.stream_source()
@@ -299,7 +305,6 @@ class NestCamera(Camera):
             return await webrtc.async_offer_for_stream_source(
                 self.hass, offer_sdp, stream_source
             )
-        trait: CameraLiveStreamTrait = self._device.traits[CameraLiveStreamTrait.NAME]
         try:
             stream = await trait.generate_web_rtc_stream(offer_sdp)
         except GoogleNestException as err:
