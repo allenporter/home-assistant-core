@@ -1026,11 +1026,8 @@ tests/components/watttime/* @bachya
 homeassistant/components/weather/* @fabaff
 tests/components/weather/* @fabaff
 homeassistant/components/webostv/* @bendavid @thecode
-<<<<<<< HEAD
 tests/components/webostv/* @bendavid @thecode
 homeassistant/components/webrtc/* @allenporter
-=======
->>>>>>> Rename webrtc to rtstptowebrtc
 homeassistant/components/websocket_api/* @home-assistant/core
 tests/components/websocket_api/* @home-assistant/core
 homeassistant/components/wemo/* @esev
