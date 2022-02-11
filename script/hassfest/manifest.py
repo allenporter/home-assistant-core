@@ -45,6 +45,7 @@ NO_IOT_CLASS = [
     "configurator",
     "counter",
     "default_config",
+    "developer_credentials",
     "device_automation",
     "device_tracker",
     "diagnostics",
