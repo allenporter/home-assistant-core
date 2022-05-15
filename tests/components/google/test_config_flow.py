@@ -299,12 +299,14 @@ async def test_exchange_error(
     assert len(entries) == 1
 
 
-async def test_existing_config_entry(
+async def test_multiple_config_entries(
     hass: HomeAssistant,
     config_entry: MockConfigEntry,
     component_setup: ComponentSetup,
+    mock_code_flow: Mock,
+    mock_exchange: Mock,
 ) -> None:
-    """Test can't configure when config entry already exists."""
+    """Test multiple config entries."""
     config_entry.add_to_hass(hass)
 
     entries = hass.config_entries.async_entries(DOMAIN)
@@ -315,8 +317,130 @@ async def test_existing_config_entry(
     result = await hass.config_entries.flow.async_init(
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
-    assert result.get("type") == "abort"
-    assert result.get("reason") == "already_configured"
+    assert result.get("type") == "progress"
+    assert result.get("step_id") == "auth"
+    assert "description_placeholders" in result
+    assert "url" in result["description_placeholders"]
+
+    with patch(
+        "homeassistant.components.google.async_setup_entry", return_value=True
+    ) as mock_setup:
+        # Run one tick to invoke the credential exchange check
+        now = utcnow()
+        await fire_alarm(hass, now + CODE_CHECK_ALARM_TIMEDELTA)
+        await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_configure(
+            flow_id=result["flow_id"]
+        )
+
+    assert result.get("type") == "create_entry"
+    assert result.get("title") == "client-id"
+    assert "data" in result
+    data = result["data"]
+    assert "token" in data
+    assert 0 < data["token"]["expires_in"] < 8 * 86400
+    assert (
+        datetime.datetime.now().timestamp()
+        <= data["token"]["expires_at"]
+        < (datetime.datetime.now() + datetime.timedelta(days=8)).timestamp()
+    )
+    data["token"].pop("expires_at")
+    data["token"].pop("expires_in")
+    assert data == {
+        "auth_implementation": "device_auth",
+        "token": {
+            "access_token": "ACCESS_TOKEN",
+            "refresh_token": "REFRESH_TOKEN",
+            "scope": "https://www.googleapis.com/auth/calendar",
+            "token_type": "Bearer",
+        },
+    }
+
+    assert len(mock_setup.mock_calls) == 1
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 2
+
+
+async def test_multiple_credentials(
+    hass: HomeAssistant,
+    config_entry: MockConfigEntry,
+    component_setup: ComponentSetup,
+    mock_code_flow: Mock,
+    mock_exchange: Mock,
+) -> None:
+    """Test multiple credentials and multiple config entries."""
+    config_entry.add_to_hass(hass)
+
+    with patch(
+        "homeassistant.components.google.async_setup_entry", return_value=True
+    ) as mock_setup:
+        assert await component_setup()
+
+    assert len(mock_setup.mock_calls) == 1
+
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 1
+
+    # Add another credential, then add another config entry which offers a choice of
+    # which account to use.
+    await async_import_client_credential(
+        hass,
+        DOMAIN,
+        ClientCredential("client-id2", "client-secret2"),
+        "test-cred",
+    )
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+    assert result.get("type") == "form"
+    assert result.get("step_id") == "pick_implementation"
+
+    result = await hass.config_entries.flow.async_configure(
+        flow_id=result["flow_id"],
+        user_input={"implementation": "test-cred"},
+    )
+    assert result.get("type") == "progress"
+    assert result.get("step_id") == "auth"
+    assert "description_placeholders" in result
+    assert "url" in result["description_placeholders"]
+
+    with patch(
+        "homeassistant.components.google.async_setup_entry", return_value=True
+    ) as mock_setup:
+        # Run one tick to invoke the credential exchange check
+        now = utcnow()
+        await fire_alarm(hass, now + CODE_CHECK_ALARM_TIMEDELTA)
+        await hass.async_block_till_done()
+        result = await hass.config_entries.flow.async_configure(
+            flow_id=result["flow_id"]
+        )
+
+    assert result.get("type") == "create_entry"
+    assert result.get("title") == "client-id2"
+    assert "data" in result
+    data = result["data"]
+    assert "token" in data
+    assert 0 < data["token"]["expires_in"] < 8 * 86400
+    assert (
+        datetime.datetime.now().timestamp()
+        <= data["token"]["expires_at"]
+        < (datetime.datetime.now() + datetime.timedelta(days=8)).timestamp()
+    )
+    data["token"].pop("expires_at")
+    data["token"].pop("expires_in")
+    assert data == {
+        "auth_implementation": "test-cred",
+        "token": {
+            "access_token": "ACCESS_TOKEN",
+            "refresh_token": "REFRESH_TOKEN",
+            "scope": "https://www.googleapis.com/auth/calendar",
+            "token_type": "Bearer",
+        },
+    }
+
+    assert len(mock_setup.mock_calls) == 1
+    entries = hass.config_entries.async_entries(DOMAIN)
+    assert len(entries) == 2
 
 
 async def test_missing_configuration(
@@ -402,11 +526,12 @@ async def test_reauth_flow(
     mock_exchange: Mock,
     component_setup: ComponentSetup,
 ) -> None:
-    """Test can't configure when config entry already exists."""
+    """Test reauthenticating an existing config entry."""
     config_entry = MockConfigEntry(
         domain=DOMAIN,
         data={
             "auth_implementation": "device_auth",
+            # Does not have all valid fields, but ok since not accessed
             "token": {"access_token": "OLD_ACCESS_TOKEN"},
         },
     )
@@ -418,7 +543,12 @@ async def test_reauth_flow(
     assert await component_setup()
 
     result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_REAUTH}, data=config_entry.data
+        DOMAIN,
+        context={
+            "source": config_entries.SOURCE_REAUTH,
+            "entry_id": entries[0].entry_id,
+        },
+        data=config_entry.data,
     )
     assert result["type"] == "form"
     assert result["step_id"] == "reauth_confirm"

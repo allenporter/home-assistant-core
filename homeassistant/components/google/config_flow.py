@@ -6,6 +6,7 @@ from typing import Any
 
 from oauth2client.client import Credentials
 
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntry
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers import config_entry_oauth2_flow
 
@@ -32,7 +33,6 @@ class OAuth2FlowHandler(
     def __init__(self) -> None:
         """Set up instance."""
         super().__init__()
-        self._reauth = False
         self._device_flow: DeviceFlow | None = None
 
     @property
@@ -51,14 +51,6 @@ class OAuth2FlowHandler(
         self.flow_impl = list(implementations.values())[0]
         self.external_data = info
         return await super().async_step_creation(info)
-
-    async def async_step_user(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle external yaml configuration."""
-        if not self._reauth and self._async_current_entries():
-            return self.async_abort(reason="already_configured")
-        return await super().async_step_user(user_input)
 
     async def async_step_auth(
         self, user_input: dict[str, Any] | None = None
@@ -121,12 +113,22 @@ class OAuth2FlowHandler(
             return self.async_abort(reason="code_expired")
         return await super().async_step_creation(user_input)
 
+    def _async_reauth_entry(self) -> ConfigEntry | None:
+        """Return the current ConfigEntry under reauth."""
+        if self.source != SOURCE_REAUTH or "entry_id" not in self.context:
+            return None
+        return next(
+            (
+                entry
+                for entry in self._async_current_entries()
+                if entry.entry_id == self.context["entry_id"]
+            ),
+            None,
+        )
+
     async def async_oauth_create_entry(self, data: dict) -> FlowResult:
         """Create an entry for the flow, or update existing entry."""
-        existing_entries = self._async_current_entries()
-        if existing_entries:
-            assert len(existing_entries) == 1
-            entry = existing_entries[0]
+        if entry := self._async_reauth_entry():
             self.hass.config_entries.async_update_entry(entry, data=data)
             await self.hass.config_entries.async_reload(entry.entry_id)
             return self.async_abort(reason="reauth_successful")
@@ -136,7 +138,6 @@ class OAuth2FlowHandler(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Perform reauth upon an API authentication error."""
-        self._reauth = True
         return await self.async_step_reauth_confirm()
 
     async def async_step_reauth_confirm(

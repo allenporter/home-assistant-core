@@ -19,7 +19,7 @@ from homeassistant.components.google import (
     SERVICE_ADD_EVENT,
     SERVICE_SCAN_CALENDARS,
 )
-from homeassistant.config_entries import ConfigEntryState
+from homeassistant.config_entries import SOURCE_REAUTH, ConfigEntryState
 from homeassistant.const import STATE_OFF
 from homeassistant.core import HomeAssistant, State
 from homeassistant.setup import async_setup_component
@@ -98,7 +98,10 @@ async def test_existing_token_missing_scope(
 
     flows = hass.config_entries.flow.async_progress()
     assert len(flows) == 1
-    assert flows[0]["step_id"] == "reauth_confirm"
+    flow = flows[0]
+    assert flow["step_id"] == "reauth_confirm"
+    assert flow["context"]["source"] == SOURCE_REAUTH
+    assert flow["context"]["entry_id"] == entries[0].entry_id
 
 
 @pytest.mark.parametrize("calendars_config", [[{"cal_id": "invalid-schema"}]])

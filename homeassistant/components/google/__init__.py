@@ -200,6 +200,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass, entry
         )
     )
+    if entry.unique_id is None:
+        hass.config_entries.async_update_entry(entry, unique_id=implementation.domain)
+
     session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
     # Force a token refresh to fix a bug where tokens were persisted with
     # expires_in (relative time delta) and expires_at (absolute time) swapped.
@@ -225,7 +228,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     calendar_service = GoogleCalendarService(
         ApiAuthImpl(async_get_clientsession(hass), session)
     )
-    hass.data[DOMAIN][DATA_SERVICE] = calendar_service
+    hass.data[DOMAIN][entry.entry_id] = {DATA_SERVICE: calendar_service}
 
     track_new = hass.data[DOMAIN][DATA_CONFIG].get(CONF_TRACK_NEW, True)
     await async_setup_services(hass, track_new, calendar_service)

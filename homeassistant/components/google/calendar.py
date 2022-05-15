@@ -87,7 +87,7 @@ def _async_setup_entities(
     async_add_entities: AddEntitiesCallback,
     disc_info: dict[str, Any],
 ) -> None:
-    calendar_service = hass.data[DOMAIN][DATA_SERVICE]
+    calendar_service = hass.data[DOMAIN][entry.entry_id][DATA_SERVICE]
     entities = []
     for data in disc_info[CONF_ENTITIES]:
         if not data[CONF_TRACK]:
