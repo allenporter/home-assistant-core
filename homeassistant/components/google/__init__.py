@@ -10,6 +10,7 @@ import aiohttp
 from gcal_sync.api import GoogleCalendarService
 from gcal_sync.exceptions import ApiException, AuthException
 from gcal_sync.model import DateOrDatetime, Event
+from gcal_sync.store import CalendarStore
 from oauth2client.file import Storage
 import voluptuous as vol
 from voluptuous.error import Error as VoluptuousError
@@ -35,6 +36,7 @@ from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.entity import generate_entity_id
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 
 from .api import ApiAuthImpl, get_feature_access
@@ -42,6 +44,7 @@ from .const import (
     CONF_CALENDAR_ACCESS,
     DATA_CONFIG,
     DATA_SERVICE,
+    DATA_STORE,
     DEVICE_AUTH_IMPL,
     DOMAIN,
     EVENT_DESCRIPTION,
@@ -82,6 +85,9 @@ SERVICE_ADD_EVENT = "add_event"
 YAML_DEVICES = f"{DOMAIN}_calendars.yaml"
 
 TOKEN_FILE = f".{DOMAIN}.token"
+
+STORAGE_KEY = "google.calendar_data"
+STORAGE_VERSION = 1
 
 PLATFORMS = ["calendar"]
 
@@ -165,13 +171,41 @@ ADD_EVENT_SERVICE_SCHEMA = vol.All(
 )
 
 
+class GoogleCalendarStore(CalendarStore):
+    """Interface for external calendar storage."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize GoogleCalendarStore."""
+        self._store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        self._data: dict[str, Any] | None = None
+
+    async def async_load(self) -> dict[str, Any] | None:
+        """Load data."""
+        if (
+            self._data is None
+            and (data := await self._store.async_load())
+            and isinstance(data, dict)
+        ):
+            self._data = data
+        return self._data
+
+    async def async_save(self, data: dict[str, Any]) -> None:
+        """Save data."""
+        self._data = data
+        await self._store.async_save(data)
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Google component."""
+    hass.data.setdefault(DOMAIN, {})
+
+    hass.data[DOMAIN][DATA_STORE] = GoogleCalendarStore(hass)
+
     if DOMAIN not in config:
         return True
 
     conf = config.get(DOMAIN, {})
-    hass.data[DOMAIN] = {DATA_CONFIG: conf}
+    hass.data[DOMAIN][DATA_CONFIG] = conf
 
     if CONF_CLIENT_ID in conf and CONF_CLIENT_SECRET in conf:
         await async_import_client_credential(

@@ -121,7 +121,6 @@ async def test_all_day_event(hass, mock_events_list_items, component_setup):
         "friendly_name": TEST_ENTITY_NAME,
         "message": event["summary"],
         "all_day": True,
-        "offset_reached": False,
         "start_time": week_from_today.strftime(DATE_STR_FORMAT),
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
@@ -149,7 +148,6 @@ async def test_future_event(hass, mock_events_list_items, component_setup):
         "friendly_name": TEST_ENTITY_NAME,
         "message": event["summary"],
         "all_day": False,
-        "offset_reached": False,
         "start_time": one_hour_from_now.strftime(DATE_STR_FORMAT),
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
@@ -177,7 +175,6 @@ async def test_in_progress_event(hass, mock_events_list_items, component_setup):
         "friendly_name": TEST_ENTITY_NAME,
         "message": event["summary"],
         "all_day": False,
-        "offset_reached": False,
         "start_time": middle_of_event.strftime(DATE_STR_FORMAT),
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
@@ -300,7 +297,6 @@ async def test_missing_summary(hass, mock_events_list_items, component_setup):
         "friendly_name": TEST_ENTITY_NAME,
         "message": "",
         "all_day": False,
-        "offset_reached": False,
         "start_time": start_event.strftime(DATE_STR_FORMAT),
         "end_time": end_event.strftime(DATE_STR_FORMAT),
         "location": event["location"],
@@ -354,7 +350,7 @@ async def test_update_error(
     # No change
     state = hass.states.get(TEST_ENTITY)
     assert state.name == TEST_ENTITY_NAME
-    assert state.state == "on"
+    assert state.state == "unavailable"
 
     # Advance time beyond update/throttle point
     now += datetime.timedelta(minutes=30)
@@ -491,6 +487,7 @@ async def test_http_api_event_paging(
             "items": [
                 {
                     **TEST_EVENT,
+                    "id": "event-id-1",
                     "summary": "event 1",
                     **upcoming(),
                 }
@@ -500,6 +497,7 @@ async def test_http_api_event_paging(
             "items": [
                 {
                     **TEST_EVENT,
+                    "id": "event-id-2",
                     "summary": "event 2",
                     **upcoming(),
                 }

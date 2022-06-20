@@ -7,9 +7,16 @@ from datetime import datetime, timedelta
 import logging
 from typing import Any
 
-from gcal_sync.api import GoogleCalendarService, ListEventsRequest
-from gcal_sync.exceptions import ApiException
-from gcal_sync.model import DateOrDatetime, Event
+import async_timeout
+from gcal_sync.api import (
+    GoogleCalendarService,
+    ListEventsRequest,
+    LocalListEventsRequest,
+)
+from gcal_sync.exceptions import ApiException, AuthException
+from gcal_sync.model import Calendar, DateOrDatetime, Event
+from gcal_sync.store import CalendarStore, ScopedCalendarStore
+from gcal_sync.sync import CalendarEventSyncManager, CalendarListSyncManager
 import voluptuous as vol
 
 from homeassistant.components.calendar import (
@@ -21,6 +28,7 @@ from homeassistant.components.calendar import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICE_ID, CONF_ENTITIES, CONF_NAME, CONF_OFFSET
+<<<<<<< HEAD
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import PlatformNotReady
 from homeassistant.helpers import (
@@ -28,8 +36,18 @@ from homeassistant.helpers import (
     entity_platform,
     entity_registry as er,
 )
+=======
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, PlatformNotReady
+from homeassistant.helpers import config_validation as cv, entity_platform
+>>>>>>> 616ba8206c (Use local calendar APIs)
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.update_coordinator import (
+    CoordinatorEntity,
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 from homeassistant.util import Throttle
 
 from . import (
@@ -37,6 +55,7 @@ from . import (
     CONF_SEARCH,
     CONF_TRACK,
     DATA_SERVICE,
+    DATA_STORE,
     DEFAULT_CONF_OFFSET,
     DOMAIN,
     YAML_DEVICES,
@@ -111,9 +130,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the google calendar platform."""
+    store = hass.data[DOMAIN][config_entry.entry_id][DATA_STORE]
     calendar_service = hass.data[DOMAIN][config_entry.entry_id][DATA_SERVICE]
+
+    calendar_list_sync_manager = CalendarListSyncManager(
+        calendar_service,
+        store,
+    )
     try:
-        result = await calendar_service.async_list_calendars()
+        await calendar_list_sync_manager.run()
+    except ApiException as err:
+        raise PlatformNotReady(str(err)) from err
+    try:
+        result = await calendar_list_sync_manager.store_service.async_list_calendars()
     except ApiException as err:
         raise PlatformNotReady(str(err)) from err
 
@@ -129,9 +158,34 @@ async def async_setup_entry(
     calendars = await hass.async_add_executor_job(
         load_config, hass.config.path(YAML_DEVICES)
     )
+    entities = []
+    if calendars:
+        entities = await get_configured_entities(
+            hass, calendars, result.calendars, calendar_service
+        )
+    else:
+        entities = await get_entities(hass, result.calendars, calendar_service, store)
+    async_add_entities(entities, True)
+
+    platform = entity_platform.async_get_current_platform()
+    if get_feature_access(hass, entry) is FeatureAccess.read_write:
+        platform.async_register_entity_service(
+            SERVICE_CREATE_EVENT,
+            CREATE_EVENT_SCHEMA,
+            async_create_event,
+        )
+
+
+async def get_configured_entities(
+    hass: HomeAssistant,
+    calendars: dict[str, Any],
+    api_calendars: list[Calendar],
+    calendar_service: GoogleCalendarService,
+) -> list:
+    """Create calendar entities using google_calendars.yaml configuration."""
     new_calendars = []
     entities = []
-    for calendar_item in result.items:
+    for calendar_item in api_calendars:
         calendar_id = calendar_item.id
         if calendars and calendar_id in calendars:
             calendar_info = calendars[calendar_id]
@@ -193,8 +247,6 @@ async def async_setup_entry(
                 )
             )
 
-    async_add_entities(entities, True)
-
     if calendars and new_calendars:
 
         def append_calendars_to_config() -> None:
@@ -204,13 +256,47 @@ async def async_setup_entry(
 
         await hass.async_add_executor_job(append_calendars_to_config)
 
+<<<<<<< HEAD
     platform = entity_platform.async_get_current_platform()
     if get_feature_access(hass, config_entry) is FeatureAccess.read_write:
         platform.async_register_entity_service(
             SERVICE_CREATE_EVENT,
             CREATE_EVENT_SCHEMA,
             async_create_event,
+=======
+    return entities
+
+
+async def get_entities(
+    hass: HomeAssistant,
+    api_calendars: list[Calendar],
+    calendar_service: GoogleCalendarService,
+    store: CalendarStore,
+) -> list:
+    """Create calendar entities using google_calendars.yaml configuration."""
+    entities = []
+    for calendar_item in api_calendars:
+        sync_manager = CalendarEventSyncManager(
+            calendar_service, calendar_item.id, store
+>>>>>>> 616ba8206c (Use local calendar APIs)
         )
+        coordinator = CalendarEventCoordinator(
+            hass, sync_manager, calendar_item.summary
+        )
+        await coordinator.async_config_entry_first_refresh()
+        entities.append(
+            LocalCalendarEntity(
+                coordinator,
+                sync_manager,
+                calendar_item,
+                generate_entity_id(
+                    ENTITY_ID_FORMAT,
+                    calendar_item.summary,
+                    hass=hass,
+                ),
+            )
+        )
+    return entities
 
 
 class GoogleCalendarEntity(CalendarEntity):
@@ -311,6 +397,84 @@ class GoogleCalendarEntity(CalendarEntity):
             self._offset_value = offset
         else:
             self._event = None
+
+
+class CalendarEventCoordinator(DataUpdateCoordinator):
+    """Sync calendar events from Google API to local storage."""
+
+    def __init__(
+        self, hass: HomeAssistant, sync_manager: CalendarEventSyncManager, name: str
+    ) -> None:
+        """Initialize my coordinator."""
+        super().__init__(
+            hass,
+            _LOGGER,
+            name=name,
+            update_interval=MIN_TIME_BETWEEN_UPDATES,
+        )
+        self._sync_manager = sync_manager
+
+    async def _async_update_data(self) -> CalendarEvent | None:
+        """Fetch data from API endpoint."""
+        try:
+            async with async_timeout.timeout(120):
+                await self._sync_manager.run()
+        except AuthException as err:
+            raise ConfigEntryAuthFailed from err
+        except ApiException as err:
+            raise UpdateFailed(f"Error communicating with API: {err}") from err
+
+        result = await self._sync_manager.store_service.async_list_events(
+            LocalListEventsRequest()
+        )
+        return _get_calendar_event(next(iter(result.events))) if result.events else None
+
+
+class LocalCalendarEntity(CoordinatorEntity, CalendarEntity):
+    """A calendar event device."""
+
+    def __init__(
+        self,
+        coordinator: DataUpdateCoordinator,
+        sync_manager: CalendarEventSyncManager,
+        calendar: Calendar,
+        entity_id: str,
+    ) -> None:
+        """Create the Calendar event device."""
+        super().__init__(coordinator)
+        self._sync_manager = sync_manager
+        self._event: CalendarEvent | None = None
+        self._attr_name = calendar.summary
+        self.entity_id = entity_id
+        self._attr_unique_id = calendar.id
+
+    @property
+    def event(self) -> CalendarEvent | None:
+        """Return the next upcoming event."""
+        return self._event
+
+    async def async_added_to_hass(self) -> None:
+        """When entity is added to hass."""
+        await super().async_added_to_hass()
+        self.coordinator.async_update_listeners()
+
+    async def async_get_events(
+        self, hass: HomeAssistant, start_date: datetime, end_date: datetime
+    ) -> list[CalendarEvent]:
+        """Get all events in a specific time frame."""
+        result = await self._sync_manager.store_service.async_list_events(
+            LocalListEventsRequest(
+                start_time=start_date,
+                end_time=end_date,
+            )
+        )
+        return [_get_calendar_event(event) for event in result.events]
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        self._event = self.coordinator.data
+        super()._handle_coordinator_update()
 
 
 def _get_calendar_event(event: Event) -> CalendarEvent:

@@ -9,7 +9,9 @@ DEVICE_AUTH_IMPL = "device_auth"
 CONF_CALENDAR_ACCESS = "calendar_access"
 DATA_CALENDARS = "calendars"
 DATA_SERVICE = "service"
+DATA_SYNC_MANAGER = "sync_manager"
 DATA_CONFIG = "config"
+DATA_STORE = "store"
 
 
 class FeatureAccess(Enum):
