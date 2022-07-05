@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import logging
+from typing import Any, Protocol
 
 from homeassistant import config as conf_util
 from homeassistant.const import (
@@ -20,8 +21,9 @@ from homeassistant.helpers import (
 )
 from homeassistant.helpers.reload import async_reload_integration_platforms
 from homeassistant.helpers.service import async_register_admin_service
+from homeassistant.helpers.template import register_platform_template
 from homeassistant.helpers.typing import ConfigType
-from homeassistant.loader import async_get_integration
+from homeassistant.loader import IntegrationNotFound, async_get_integration
 
 from .const import CONF_TRIGGER, DOMAIN, PLATFORMS
 
@@ -56,6 +58,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         hass.bus.async_fire(f"event_{DOMAIN}_reloaded", context=call.context)
 
     async_register_admin_service(hass, DOMAIN, SERVICE_RELOAD, _reload_config)
+
+    for component in "calendar":
+        platform = await _async_get_template_platform(hass, component)
+        for name in getattr(platform, "TEMPLATE_FUNCTIONS"):
+            if not (func := getattr(platform, name)):
+                raise ValueError(
+                    f"Component '{component}' template platform did not implement '{name}'"
+                )
+            register_platform_template(hass, component, name, func)
 
     return True
 
@@ -166,3 +177,33 @@ class TriggerUpdateCoordinator(update_coordinator.DataUpdateCoordinator):
         self.async_set_updated_data(
             {"run_variables": run_variables, "context": context}
         )
+
+
+class TemplateProtocol(Protocol):
+    """Define the format of template platform modules.
+
+    Each module must define either TRIGGER_SCHEMA or async_validate_trigger_config.
+    """
+
+    TEMPLATE_FUNCTIONS: dict[str, Callable[..., Awaitable[Any] | Any]]
+
+
+async def _async_get_template_platform(
+    hass: HomeAssistant, integration_domain: str
+) -> TemplateProtocol | None:
+    try:
+        integration = await async_get_integration(hass, integration_domain)
+    except IntegrationNotFound as err:
+        _LOGGER.debug("Integration '%s' does not exist: %s", integration_domain, err)
+        return None
+    try:
+        platform = integration.get_platform("template")
+    except ImportError as err:
+        raise ValueError(
+            f"Integration '{integration_domain}' does not provide 'template' support"
+        ) from err
+    if not hasattr(platform, "TEMPLATE_FUNCTIONS"):
+        raise ValueError(
+            f"Integration '{integration_domain}' platform 'template' did not implement 'TEMPLATE_FUNCTIONS'"
+        )
+    return platform

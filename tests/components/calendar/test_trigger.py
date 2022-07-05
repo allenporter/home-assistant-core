@@ -11,7 +11,6 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import asynccontextmanager
 import datetime
-import logging
 import secrets
 from typing import Any
 from unittest.mock import patch
@@ -26,12 +25,10 @@ from homeassistant.components.calendar.trigger import EVENT_END, EVENT_START
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-import homeassistant.util.dt as dt_util
 
-from tests.common import async_fire_time_changed, async_mock_service
+from .conftest import TEST_UPDATE_INTERVAL, FakeSchedule
 
-_LOGGER = logging.getLogger(__name__)
-
+from tests.common import async_mock_service
 
 CALENDAR_ENTITY_ID = "calendar.calendar_2"
 CONFIG = {calendar.DOMAIN: {"platform": "demo"}}
@@ -145,6 +142,8 @@ def fake_schedule(
     ):
         yield schedule
 
+=======
+>>>>>>> Template platform implementation
 
 @pytest.fixture(autouse=True)
 async def setup_calendar(hass: HomeAssistant, fake_schedule: FakeSchedule) -> None:

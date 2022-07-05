@@ -5,7 +5,7 @@ from ast import literal_eval
 import asyncio
 import base64
 import collections.abc
-from collections.abc import Callable, Collection, Generator, Iterable, MutableMapping
+from collections.abc import Awaitable, Callable, Collection, Generator, Iterable, MutableMapping
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from datetime import datetime, timedelta
@@ -93,6 +93,7 @@ _ENVIRONMENT = "template.environment"
 _ENVIRONMENT_LIMITED = "template.environment_limited"
 _ENVIRONMENT_STRICT = "template.environment_strict"
 _HASS_LOADER = "template.hass_loader"
+_TEMPLATE_PLATFORMS = "template.platforms"
 
 _RE_JINJA_DELIMITERS = re.compile(r"\{%|\{\{|\{#")
 # Match "simple" ints and floats. -1.0, 1, +5, 5.0
@@ -2490,6 +2491,13 @@ class TemplateEnvironment(ImmutableSandboxedEnvironment):
         self.globals["today_at"] = hassfunction(today_at)
         self.filters["today_at"] = self.globals["today_at"]
 
+        for component in hass.data[_TEMPLATE_PLATFORMS]:
+            self.globals[component] = TemplatePlatform(
+                hass,
+                component,
+                hassfunction,
+            )
+
     def is_safe_callable(self, obj):
         """Test if callback is safe."""
         return isinstance(obj, AllStates) or super().is_safe_callable(obj)
@@ -2561,3 +2569,65 @@ class TemplateEnvironment(ImmutableSandboxedEnvironment):
 
 
 _NO_HASS_ENV = TemplateEnvironment(None)  # type: ignore[no-untyped-call]
+
+
+class TemplatePlatform:
+    """Class to expose all HA states as attributes."""
+
+    __setitem__ = _readonly
+    __delitem__ = _readonly
+    __slots__ = ("_hass", "_domain", "_hassfunction")
+
+    def __init__(self, hass: HomeAssistant, domain: str, hassfunction: Any) -> None:
+        """Initialize all states."""
+        self._hass = hass
+        self._domain = domain
+        self._hassfunction = hassfunction
+
+    def __getattr__(self, name):
+        """Return the domain state."""
+        platform = self._hass.data[_TEMPLATE_PLATFORMS][self._domain]
+        if name not in platform:
+            return None
+        func = platform[name]
+        return self._hassfunction(func)
+
+    # Jinja will try __getitem__ first and it avoids the need
+    # to call is_safe_attribute
+    # __getitem__ = __getattr__
+
+    #    def _collect_all(self) -> None:
+    #        render_info = self._hass.data.get(_RENDER_INFO)
+    #        if render_info is not None:
+    #            render_info.all_states = True
+
+    #    def _collect_all_lifecycle(self) -> None:
+    #        render_info = self._hass.data.get(_RENDER_INFO)
+    #        if render_info is not None:
+    #            render_info.all_states_lifecycle = True
+
+    #    def __iter__(self):
+    #        """Return all states."""
+    #        self._collect_all()
+    #        return _state_generator(self._hass, None)
+
+    #    def __len__(self) -> int:
+    #        """Return number of states."""
+    #        self._collect_all_lifecycle()
+    #        return self._hass.states.async_entity_ids_count()
+
+    def __repr__(self) -> str:
+        """Representation of All States."""
+        return f"<template PlatformTemplate '{self._domain}'>"
+
+
+def register_platform_template(
+    hass: HomeAssistant,
+    domain: str,
+    name: str,
+    func: Callable[..., Awaitable[Any] | Any | None],
+) -> None:
+    """Ex."""
+    hass.data.setdefault(_TEMPLATE_PLATFORMS, {})
+    hass.data[_TEMPLATE_PLATFORMS].setdefault(domain, {})
+    hass.data[_TEMPLATE_PLATFORMS][domain][name] = func
