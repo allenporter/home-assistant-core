@@ -15,7 +15,7 @@ from gcal_sync.api import (
 )
 from gcal_sync.exceptions import ApiException, AuthException
 from gcal_sync.model import Calendar, DateOrDatetime, Event
-from gcal_sync.store import CalendarStore, ScopedCalendarStore
+from gcal_sync.store import CalendarStore
 from gcal_sync.sync import CalendarEventSyncManager, CalendarListSyncManager
 import voluptuous as vol
 
@@ -28,19 +28,13 @@ from homeassistant.components.calendar import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_DEVICE_ID, CONF_ENTITIES, CONF_NAME, CONF_OFFSET
-<<<<<<< HEAD
-from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import PlatformNotReady
+from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.exceptions import ConfigEntryAuthFailed, PlatformNotReady
 from homeassistant.helpers import (
     config_validation as cv,
     entity_platform,
     entity_registry as er,
 )
-=======
-from homeassistant.core import HomeAssistant, ServiceCall, callback
-from homeassistant.exceptions import ConfigEntryAuthFailed, PlatformNotReady
-from homeassistant.helpers import config_validation as cv, entity_platform
->>>>>>> 616ba8206c (Use local calendar APIs)
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import (
@@ -146,14 +140,6 @@ async def async_setup_entry(
     except ApiException as err:
         raise PlatformNotReady(str(err)) from err
 
-    entity_registry = er.async_get(hass)
-    registry_entries = er.async_entries_for_config_entry(
-        entity_registry, config_entry.entry_id
-    )
-    entity_entry_map = {
-        entity_entry.unique_id: entity_entry for entity_entry in registry_entries
-    }
-
     # Yaml configuration may override objects from the API
     calendars = await hass.async_add_executor_job(
         load_config, hass.config.path(YAML_DEVICES)
@@ -161,14 +147,14 @@ async def async_setup_entry(
     entities = []
     if calendars:
         entities = await get_configured_entities(
-            hass, calendars, result.calendars, calendar_service
+            hass, calendars, result.calendars, calendar_service, config_entry
         )
     else:
         entities = await get_entities(hass, result.calendars, calendar_service, store)
     async_add_entities(entities, True)
 
     platform = entity_platform.async_get_current_platform()
-    if get_feature_access(hass, entry) is FeatureAccess.read_write:
+    if get_feature_access(hass, config_entry) is FeatureAccess.read_write:
         platform.async_register_entity_service(
             SERVICE_CREATE_EVENT,
             CREATE_EVENT_SCHEMA,
@@ -181,10 +167,19 @@ async def get_configured_entities(
     calendars: dict[str, Any],
     api_calendars: list[Calendar],
     calendar_service: GoogleCalendarService,
+    config_entry: ConfigEntry,
 ) -> list:
     """Create calendar entities using google_calendars.yaml configuration."""
     new_calendars = []
     entities = []
+    entity_registry = er.async_get(hass)
+    registry_entries = er.async_entries_for_config_entry(
+        entity_registry, config_entry.entry_id
+    )
+    entity_entry_map = {
+        entity_entry.unique_id: entity_entry for entity_entry in registry_entries
+    }
+
     for calendar_item in api_calendars:
         calendar_id = calendar_item.id
         if calendars and calendar_id in calendars:
@@ -256,14 +251,6 @@ async def get_configured_entities(
 
         await hass.async_add_executor_job(append_calendars_to_config)
 
-<<<<<<< HEAD
-    platform = entity_platform.async_get_current_platform()
-    if get_feature_access(hass, config_entry) is FeatureAccess.read_write:
-        platform.async_register_entity_service(
-            SERVICE_CREATE_EVENT,
-            CREATE_EVENT_SCHEMA,
-            async_create_event,
-=======
     return entities
 
 
@@ -278,7 +265,6 @@ async def get_entities(
     for calendar_item in api_calendars:
         sync_manager = CalendarEventSyncManager(
             calendar_service, calendar_item.id, store
->>>>>>> 616ba8206c (Use local calendar APIs)
         )
         coordinator = CalendarEventCoordinator(
             hass, sync_manager, calendar_item.summary
