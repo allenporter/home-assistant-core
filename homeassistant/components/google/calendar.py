@@ -13,7 +13,7 @@ from gcal_sync.api import (
 )
 from gcal_sync.exceptions import ApiException, AuthException
 from gcal_sync.model import DateOrDatetime, Event
-from gcal_sync.sync import CalendarEventSyncManager, CalendarListSyncManager
+from gcal_sync.sync import CalendarEventSyncManager
 import voluptuous as vol
 
 from homeassistant.components.calendar import (
@@ -122,16 +122,8 @@ async def async_setup_entry(
     """Set up the google calendar platform."""
     store = hass.data[DOMAIN][config_entry.entry_id][DATA_STORE]
     calendar_service = hass.data[DOMAIN][config_entry.entry_id][DATA_SERVICE]
-    calendar_list_sync_manager = CalendarListSyncManager(
-        calendar_service,
-        store,
-    )
     try:
-        await calendar_list_sync_manager.run()
-    except ApiException as err:
-        raise PlatformNotReady(str(err)) from err
-    try:
-        result = await calendar_list_sync_manager.store_service.async_list_calendars()
+        result = await calendar_service.async_list_calendars()
     except ApiException as err:
         raise PlatformNotReady(str(err)) from err
 
@@ -148,8 +140,8 @@ async def async_setup_entry(
         load_config, hass.config.path(YAML_DEVICES)
     )
     new_calendars = []
-    entities: list[GoogleCalendarEntity] = []
-    for calendar_item in result.calendars:
+    entities = []
+    for calendar_item in result.items:
         calendar_id = calendar_item.id
         if calendars and calendar_id in calendars:
             calendar_info = calendars[calendar_id]
