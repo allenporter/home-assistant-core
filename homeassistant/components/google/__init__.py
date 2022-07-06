@@ -10,7 +10,7 @@ import aiohttp
 from gcal_sync.api import GoogleCalendarService
 from gcal_sync.exceptions import ApiException, AuthException
 from gcal_sync.model import DateOrDatetime, Event
-from gcal_sync.store import CalendarStore
+from gcal_sync.store import CalendarStore, ScopedCalendarStore
 from oauth2client.file import Storage
 import voluptuous as vol
 from voluptuous.error import Error as VoluptuousError
@@ -198,6 +198,7 @@ class GoogleCalendarStore(CalendarStore):
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Google component."""
     hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][DATA_STORE] = GoogleCalendarStore(hass)
 
     if DOMAIN not in config:
         return True
@@ -254,7 +255,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Google from a config entry."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {}
-    hass.data[DOMAIN][entry.entry_id][DATA_STORE] = GoogleCalendarStore(hass)
+    global_store = hass.data[DOMAIN][DATA_STORE]
+    hass.data[DOMAIN][entry.entry_id][DATA_STORE] = ScopedCalendarStore(
+        global_store, entry.entry_id
+    )
 
     implementation = (
         await config_entry_oauth2_flow.async_get_config_entry_implementation(
