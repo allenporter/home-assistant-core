@@ -87,6 +87,10 @@ class CalendarEvent:
     description: str | None = None
     location: str | None = None
 
+    uid: str | None = None
+    recurrence_id: str | None = None
+    rrule: str | None = None
+
     @property
     def start_datetime_local(self) -> datetime.datetime:
         """Return event start time as a local datetime."""
@@ -284,6 +288,9 @@ class CalendarEventView(http.HomeAssistantView):
                     "location": event.location,
                     "start": _get_api_date(event.start),
                     "end": _get_api_date(event.end),
+                    "uid": event.uid,
+                    "rrule": event.rrule,
+                    "recurrence_id": event.recurrence_id,
                 }
                 for event in calendar_event_list
             ]

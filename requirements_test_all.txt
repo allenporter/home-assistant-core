@@ -674,6 +674,9 @@ iaqualink==0.4.1
 # homeassistant.components.ibeacon
 ibeacon_ble==0.7.2
 
+# homeassistant.components.local_calendar
+ical==2.0.0
+
 # homeassistant.components.ping
 icmplib==3.0
 
