@@ -23,18 +23,19 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from . import DOMAIN, CalendarEntity, CalendarEvent
+from .const import CALENDAR_EVENT, TRIGGER_EVENT_END, TRIGGER_EVENT_START
 
 _LOGGER = logging.getLogger(__name__)
 
-EVENT_START = "start"
-EVENT_END = "end"
 UPDATE_INTERVAL = datetime.timedelta(minutes=15)
 
 TRIGGER_SCHEMA = cv.TRIGGER_BASE_SCHEMA.extend(
     {
         vol.Required(CONF_PLATFORM): DOMAIN,
         vol.Required(CONF_ENTITY_ID): cv.entity_id,
-        vol.Optional(CONF_EVENT, default=EVENT_START): vol.In({EVENT_START, EVENT_END}),
+        vol.Optional(CONF_EVENT, default=TRIGGER_EVENT_START): vol.In(
+            {TRIGGER_EVENT_START, TRIGGER_EVENT_END}
+        ),
         vol.Optional(CONF_OFFSET, default=datetime.timedelta(0)): cv.time_period,
     }
 )
@@ -109,7 +110,7 @@ def queued_event_fetcher(
     """Build a fetcher that produces a schedule of upcoming trigger events."""
 
     def get_trigger_time(event: CalendarEvent) -> datetime.datetime:
-        if event_type == EVENT_START:
+        if event_type == TRIGGER_EVENT_START:
             return event.start_datetime_local
         return event.end_datetime_local
 
@@ -223,7 +224,7 @@ class CalendarEventListener:
                 {
                     "trigger": {
                         **self._trigger_data,
-                        "calendar_event": queued_event.event.as_dict(),
+                        CALENDAR_EVENT: queued_event.event.as_dict(),
                     }
                 },
             )

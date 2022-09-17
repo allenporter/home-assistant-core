@@ -1,5 +1,33 @@
 {
   "title": "Calendar",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Calendar Event Sensor",
+        "description": "Create a sensor that matches a calendar event.",
+        "data": {
+          "name": "Name",
+          "search": "Search"
+        },
+        "data_description": {
+          "search": "Match the event summary or description."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "name": "[%key:component::calendar::config::step::user::data::name%]",
+          "search": "[%key:component::calendar::config::step::user::data::search%]"
+        },
+        "data_description": {
+          "search": "[%key:component::calendar::config::step::user::data_description::search%]"
+        }
+      }
+    }
+  },
   "entity_component": {
     "_": {
       "name": "[%key:component::calendar::title%]",

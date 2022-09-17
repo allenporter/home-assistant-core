@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 import dataclasses
 import datetime
 from http import HTTPStatus
+import inspect
 from itertools import groupby
 import logging
 import re
@@ -18,7 +19,7 @@ from homeassistant.components import frontend, http, websocket_api
 from homeassistant.components.websocket_api import ERR_NOT_FOUND, ERR_NOT_SUPPORTED
 from homeassistant.components.websocket_api.connection import ActiveConnection
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
     HomeAssistant,
@@ -312,14 +313,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry."""
-    component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
-    return await component.async_setup_entry(entry)
+    if entry.domain != DOMAIN:
+        component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
+        return await component.async_setup_entry(entry)
+
+    # Calendar event helper
+    await hass.config_entries.async_forward_entry_setups(entry, (Platform.EVENT,))
+
+    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
+    return True
+
+
+async def config_entry_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update listener, called when the config entry options are changed."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
-    return await component.async_unload_entry(entry)
+    if entry.domain != DOMAIN:
+        component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
+        return await component.async_unload_entry(entry)
+
+    return await hass.config_entries.async_unload_platforms(entry, (Platform.EVENT,))
 
 
 def get_date(date: dict[str, Any]) -> datetime.datetime:
@@ -370,6 +386,13 @@ class CalendarEvent:
             **dataclasses.asdict(self, dict_factory=_event_dict_factory),
             "all_day": self.all_day,
         }
+
+    @classmethod
+    def from_dict(cls, env: dict[str, Any]) -> CalendarEvent:
+        """Initialize from a dictionary ignoring extra fields."""
+        return cls(
+            **{k: v for k, v in env.items() if k in inspect.signature(cls).parameters}
+        )
 
     def __post_init__(self) -> None:
         """Perform validation on the CalendarEvent."""

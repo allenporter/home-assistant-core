@@ -2,7 +2,14 @@
 
 from enum import IntFlag
 
+DOMAIN = "calendar"
 CONF_EVENT = "event"
+CALENDAR_EVENT = "calendar_event"
+CONF_SEARCH = "search"
+
+# Trigger fields
+TRIGGER_EVENT_START = "start"
+TRIGGER_EVENT_END = "end"
 
 
 class CalendarEntityFeature(IntFlag):
