@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 """Constants for calendar components."""
 
 from enum import IntFlag
@@ -50,3 +51,13 @@ LIST_EVENT_FIELDS = {
     EVENT_DESCRIPTION,
     EVENT_LOCATION,
 }
+=======
+"""Constants for calendar integration."""
+
+DOMAIN = "calendar"
+CALENDAR_EVENT = "calendar_event"
+CONF_SEARCH = "search"
+
+EVENT_START = "start"
+EVENT_END = "end"
+>>>>>>> 087c98cab2 (Add calendar helper)

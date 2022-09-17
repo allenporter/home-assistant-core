@@ -1,0 +1,37 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "data": {
+                    "name": "Name",
+                    "search": "Search"
+                },
+                "data_description": {
+                    "search": "Match the event summary or description."
+                },
+                "description": "Create a sensor that matches a calendar event.",
+                "title": "Add Calendar Event Sensor"
+            }
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "name": "Name",
+                    "search": "Search"
+                },
+                "data_description": {
+                    "search": "Match the event summary or description."
+                }
+            }
+        }
+    },
+    "state": {
+        "_": {
+            "off": "Off",
+            "on": "On"
+        }
+    },
+    "title": "Calendar"
+}

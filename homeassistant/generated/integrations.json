@@ -6644,6 +6644,10 @@
     }
   },
   "helper": {
+    "calendar": {
+      "integration_type": "helper",
+      "config_flow": true
+    },
     "counter": {
       "integration_type": "helper",
       "config_flow": false
@@ -6725,6 +6729,7 @@
   "translated_name": [
     "alert",
     "aurora",
+    "calendar",
     "cert_expiry",
     "counter",
     "cpuspeed",

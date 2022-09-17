@@ -23,11 +23,10 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from . import DOMAIN, CalendarEntity, CalendarEvent
+from .const import CALENDAR_EVENT, EVENT_END, EVENT_START
 
 _LOGGER = logging.getLogger(__name__)
 
-EVENT_START = "start"
-EVENT_END = "end"
 UPDATE_INTERVAL = datetime.timedelta(minutes=15)
 
 TRIGGER_SCHEMA = cv.TRIGGER_BASE_SCHEMA.extend(
@@ -220,12 +219,7 @@ class CalendarEventListener:
             _LOGGER.debug("Dispatching event: %s", queued_event.event)
             self._hass.async_run_hass_job(
                 self._job,
-                {
-                    "trigger": {
-                        **self._trigger_data,
-                        "calendar_event": queued_event.event.as_dict(),
-                    }
-                },
+                {"trigger": {**self._trigger_data, CALENDAR_EVENT: queued_event.as_dict()}},
             )
 
     async def _handle_refresh(self, now_utc: datetime.datetime) -> None:

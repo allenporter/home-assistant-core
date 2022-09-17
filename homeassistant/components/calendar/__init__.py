@@ -18,6 +18,7 @@ from homeassistant.components import frontend, http, websocket_api
 from homeassistant.components.websocket_api import ERR_NOT_FOUND, ERR_NOT_SUPPORTED
 from homeassistant.components.websocket_api.connection import ActiveConnection
 from homeassistant.config_entries import ConfigEntry
+<<<<<<< HEAD
 from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import (
     CALLBACK_TYPE,
@@ -27,6 +28,10 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
+=======
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
+from homeassistant.core import HomeAssistant
+>>>>>>> 087c98cab2 (Add calendar helper)
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.config_validation import (  # noqa: F401
@@ -312,14 +317,33 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up a config entry."""
-    component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
-    return await component.async_setup_entry(entry)
+    if entry.domain != DOMAIN:
+        component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
+        return await component.async_setup_entry(entry)
+
+    # Calendar event helper
+    await hass.config_entries.async_forward_entry_setups(
+        entry, (Platform.BINARY_SENSOR,)
+    )
+
+    entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
+    return True
+
+
+async def config_entry_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update listener, called when the config entry options are changed."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
-    return await component.async_unload_entry(entry)
+    if entry.domain != DOMAIN:
+        component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
+        return await component.async_unload_entry(entry)
+
+    return await hass.config_entries.async_unload_platforms(
+        entry, (Platform.BINARY_SENSOR,)
+    )
 
 
 def get_date(date: dict[str, Any]) -> datetime.datetime:
@@ -371,6 +395,7 @@ class CalendarEvent:
             "all_day": self.all_day,
         }
 
+<<<<<<< HEAD
     def __post_init__(self) -> None:
         """Perform validation on the CalendarEvent."""
 
@@ -393,6 +418,14 @@ class CalendarEvent:
             and self.start == self.end
         ):
             self.end = self.start + datetime.timedelta(days=1)
+=======
+    @classmethod
+    def from_dict(cls, values: dict[str, Any]) -> CalendarEvent:
+        """Return a CalendarEvent representation from a dict."""
+        if "all_day" in values:
+            del values["all_day"]
+        return cls(**values)
+>>>>>>> ffa6a6bc23 (Update integrations)
 
 
 def _event_dict_factory(obj: Iterable[tuple[str, Any]]) -> dict[str, str]:
