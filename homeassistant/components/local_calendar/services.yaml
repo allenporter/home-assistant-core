@@ -49,3 +49,29 @@ create_event:
       example: "FREQ=WEEKLY"
       selector:
         text:
+delete_event:
+  name: Delete Event
+  description: Delete a calendar event.
+  target:
+    entity:
+      integration: local_calendar
+      domain: calendar
+  fields:
+    uid:
+      name: Unique Identifier
+      description: The unique identifier if the calendar event and all of its recurring events
+      required: true
+      selector:
+        text:
+    recurrence_id:
+      name: Recurrence identifier
+      description: The unique identifier of a specific event in a recurring event series.
+      required: false
+      selector:
+        text:
+    recurrence_range:
+      name: Recurrence Range
+      description: When specified as "THISANDFUTURE" deletes all instances of the recurring event at and beyond the specified recurrence_id.
+      required: false
+      selector:
+        text:

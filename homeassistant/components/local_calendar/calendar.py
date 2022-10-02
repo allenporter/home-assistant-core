@@ -32,38 +32,34 @@ _LOGGER = logging.getLogger(__name__)
 
 
 EVENT_DESCRIPTION = "description"
-EVENT_END_DATE = "end_date"
-EVENT_END_DATETIME = "end_date_time"
-EVENT_START_DATE = "start_date"
-EVENT_START_DATETIME = "start_date_time"
+EVENT_END = "dtend"
+EVENT_START = "dtstart"
 EVENT_SUMMARY = "summary"
+EVENT_RECURRENCE_ID = "recurrence_id"
+EVENT_RECURRENCE_RANGE = "recurrence_range"
 EVENT_RRULE = "rrule"
+EVENT_UID = "uid"
 
 SERVICE_CREATE_EVENT = "create_event"
 CREATE_EVENT_SCHEMA = vol.All(
-    cv.has_at_least_one_key(EVENT_START_DATE, EVENT_START_DATETIME),
-    cv.has_at_most_one_key(EVENT_START_DATE, EVENT_START_DATETIME),
     cv.make_entity_service_schema(
         {
             vol.Required(EVENT_SUMMARY): cv.string,
+            vol.Required(EVENT_START): vol.Any(cv.date, cv.datetime),
+            vol.Required(EVENT_END): vol.Any(cv.date, cv.datetime),
             vol.Optional(EVENT_DESCRIPTION, default=""): cv.string,
-            vol.Inclusive(
-                EVENT_START_DATE, "dates", "Start and end dates must both be specified"
-            ): cv.date,
-            vol.Inclusive(
-                EVENT_END_DATE, "dates", "Start and end dates must both be specified"
-            ): cv.date,
-            vol.Inclusive(
-                EVENT_START_DATETIME,
-                "datetimes",
-                "Start and end datetimes must both be specified",
-            ): cv.datetime,
-            vol.Inclusive(
-                EVENT_END_DATETIME,
-                "datetimes",
-                "Start and end datetimes must both be specified",
-            ): cv.datetime,
             vol.Optional(EVENT_RRULE, default=""): cv.string,
+        }
+    ),
+)
+
+SERVICE_DELETE_EVENT = "delete_event"
+DELETE_EVENT_SCHEMA = vol.All(
+    cv.make_entity_service_schema(
+        {
+            vol.Required(EVENT_UID): cv.string,
+            vol.Optional(EVENT_RECURRENCE_ID): cv.string,
+            vol.Optional(EVENT_RECURRENCE_RANGE): cv.string,
         }
     ),
 )
@@ -89,6 +85,11 @@ async def async_setup_entry(
         SERVICE_CREATE_EVENT,
         CREATE_EVENT_SCHEMA,
         "async_create_event",
+    )
+    platform.async_register_entity_service(
+        SERVICE_DELETE_EVENT,
+        DELETE_EVENT_SCHEMA,
+        "async_delete_event",
     )
 
 
@@ -133,46 +134,20 @@ class LocalCalendarEntity(CalendarEntity):
         content = IcsCalendarStream.calendar_to_ics(self._calendar)
         await self._store.async_store(content)
 
-    async def async_create_event(self, **kwargs: Any) -> dict[str, Any]:
+    async def async_create_event(self, **kwargs: Any) -> None:
         """Add a new event to calendar."""
         event = Event.parse_obj(
             {
                 EVENT_SUMMARY: kwargs[EVENT_SUMMARY],
+                EVENT_START: kwargs[EVENT_START],
+                EVENT_END: kwargs[EVENT_END],
                 EVENT_DESCRIPTION: kwargs.get(EVENT_DESCRIPTION),
-                "dtstart": kwargs.get(
-                    "dtstart",
-                    kwargs.get(EVENT_START_DATE, kwargs.get(EVENT_START_DATETIME)),
-                ),
-                "dtend": kwargs.get(
-                    "dtend", kwargs.get(EVENT_END_DATE, kwargs.get(EVENT_END_DATETIME))
-                ),
             }
         )
         if rrule := kwargs.get(EVENT_RRULE):
             event.rrule = Recur.from_rrule(rrule)
 
-        new_event = EventStore(self._calendar).add(event)
-        await self._async_store()
-        return {"uid": new_event.uid}
-
-    async def async_update_event(self, **kwargs: Any) -> None:
-        """Add a new event to calendar."""
-        uid = kwargs.pop("uid")
-        recurrence_id = kwargs.pop("recurrence_id", None)
-        range_value: Range = Range.NONE
-        if recurrence_range := kwargs.pop("recurrence_range", None):
-            range_value = Range[recurrence_range]
-
-        event = Event(**kwargs)
-        if rrule := kwargs.get(EVENT_RRULE):
-            event.rrule = Recur.from_rrule(rrule)
-
-        EventStore(self._calendar).edit(
-            uid,
-            event=event,
-            recurrence_id=recurrence_id,
-            recurrence_range=range_value,
-        )
+        EventStore(self._calendar).add(event)
         await self._async_store()
 
     async def async_delete_event(

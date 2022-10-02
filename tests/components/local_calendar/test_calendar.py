@@ -157,8 +157,8 @@ async def test_api_date_time_event(setup_integration, create_event, get_events):
     await create_event(
         {
             "summary": "Bastille Day Party",
-            "start_date_time": "1997-07-14T17:00:00+00:00",
-            "end_date_time": "1997-07-15T04:00:00+00:00",
+            "dtstart": "1997-07-14T17:00:00+00:00",
+            "dtend": "1997-07-15T04:00:00+00:00",
         }
     )
 
@@ -191,8 +191,8 @@ async def test_api_date_event(setup_integration, create_event, get_events):
     await create_event(
         {
             "summary": "Festival International de Jazz de Montreal",
-            "start_date": "2007-06-28",
-            "end_date": "2007-07-09",
+            "dtstart": "2007-06-28",
+            "dtend": "2007-07-09",
         }
     )
 
@@ -227,8 +227,8 @@ async def test_active_event(hass, setup_integration, create_event):
     await create_event(
         {
             "summary": "Evening lights",
-            "start_date_time": start,
-            "end_date_time": end,
+            "dtstart": start,
+            "dtend": end,
         }
     )
 
@@ -254,8 +254,8 @@ async def test_upcoming_event(hass, setup_integration, create_event):
     await create_event(
         {
             "summary": "Evening lights",
-            "start_date_time": start,
-            "end_date_time": end,
+            "dtstart": start,
+            "dtend": end,
         }
     )
 
@@ -279,8 +279,8 @@ async def test_recurring_event(setup_integration, create_event, get_events):
     await create_event(
         {
             "summary": "Monday meeting",
-            "start_date_time": "2022-08-29T09:00:00",
-            "end_date_time": "2022-08-29T10:00:00",
+            "dtstart": "2022-08-29T09:00:00",
+            "dtend": "2022-08-29T10:00:00",
             "rrule": "FREQ=WEEKLY",
         }
     )
@@ -319,14 +319,10 @@ async def test_websocket_delete(
     """Test websocket delete command."""
 
     await create_event(
-        "create",
         {
-            "entity_id": TEST_ENTITY,
-            "event": {
-                "summary": "Bastille Day Party",
-                "dtstart": "1997-07-14T17:00:00+00:00",
-                "dtend": "1997-07-15T04:00:00+00:00",
-            },
+            "summary": "Bastille Day Party",
+            "dtstart": "1997-07-14T17:00:00+00:00",
+            "dtend": "1997-07-15T04:00:00+00:00",
         },
     )
 
@@ -360,13 +356,10 @@ async def test_websocket_delete_recurring(
     """Test deleting a recurring event."""
     await create_event(
         {
-            "entity_id": TEST_ENTITY,
-            "event": {
-                "summary": "Morning Routine",
-                "dtstart": "2022-08-22T08:30:00",
-                "dtend": "2022-08-22T09:00:00",
-                "rrule": "FREQ=DAILY",
-            },
+            "summary": "Morning Routine",
+            "dtstart": "2022-08-22T08:30:00",
+            "dtend": "2022-08-22T09:00:00",
+            "rrule": "FREQ=DAILY",
         }
     )
     uid = "ABC"  # result["uid"]
@@ -402,7 +395,6 @@ async def test_websocket_delete_recurring(
     # Cancel a single instance and confirm it was removed
     await delete_event(
         {
-            "entity_id": TEST_ENTITY,
             "uid": uid,
             "recurrence_id": "20220824T083000",
         },
@@ -432,7 +424,6 @@ async def test_websocket_delete_recurring(
     # Delete all and future and confirm multiple were removed
     await delete_event(
         {
-            "entity_id": TEST_ENTITY,
             "uid": uid,
             "recurrence_id": "20220823T083000",
             "recurrence_range": "THISANDFUTURE",
