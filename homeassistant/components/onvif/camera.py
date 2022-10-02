@@ -130,6 +130,12 @@ class ONVIFCameraEntity(ONVIFBaseEntity, Camera):
 
     async def stream_source(self):
         """Return the stream source."""
+        if self._stream_uri is None:
+            uri_no_auth = await self.device.async_get_stream_uri(self.profile)
+            url = URL(uri_no_auth)
+            url = url.with_user(self.device.username)
+            url = url.with_password(self.device.password)
+            self._stream_uri = str(url)
         return self._stream_uri
 
     async def async_camera_image(
@@ -158,10 +164,10 @@ class ONVIFCameraEntity(ONVIFBaseEntity, Camera):
                     self.device.name,
                 )
 
-        assert self._stream_uri
+        stream_uri = await self.stream_source()
         return await ffmpeg.async_get_image(
             self.hass,
-            self._stream_uri,
+            stream_uri,
             extra_cmd=self.device.config_entry.options.get(CONF_EXTRA_ARGUMENTS),
             width=width,
             height=height,
@@ -174,8 +180,9 @@ class ONVIFCameraEntity(ONVIFBaseEntity, Camera):
         ffmpeg_manager = get_ffmpeg_manager(self.hass)
         stream = CameraMjpeg(ffmpeg_manager.binary)
 
+        stream_uri = await self.stream_source()
         await stream.open_camera(
-            self._stream_uri,
+            stream_uri,
             extra_cmd=self.device.config_entry.options.get(CONF_EXTRA_ARGUMENTS),
         )
 
@@ -189,14 +196,6 @@ class ONVIFCameraEntity(ONVIFBaseEntity, Camera):
             )
         finally:
             await stream.close()
-
-    async def async_added_to_hass(self) -> None:
-        """Run when entity about to be added to hass."""
-        uri_no_auth = await self.device.async_get_stream_uri(self.profile)
-        url = URL(uri_no_auth)
-        url = url.with_user(self.device.username)
-        url = url.with_password(self.device.password)
-        self._stream_uri = str(url)
 
     async def async_perform_ptz(
         self,
