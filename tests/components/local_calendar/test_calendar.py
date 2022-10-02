@@ -8,7 +8,7 @@ from typing import Any
 from unittest.mock import patch
 import urllib
 
-from aiohttp import ClientSession, ClientWebSocketResponse
+from aiohttp import ClientSession
 import pytest
 
 from homeassistant.components.local_calendar import LocalCalendarStore
@@ -96,6 +96,24 @@ def create_event_fixture(
     return _create
 
 
+@pytest.fixture(name="delete_event")
+def delete_event_fixture(
+    hass: HomeAssistant,
+) -> Callable[[dict[str, Any]], Awaitable[None]]:
+    """Fixture to simplify deleting events for tests."""
+
+    async def _delete(data: dict[str, Any]) -> None:
+        await hass.services.async_call(
+            DOMAIN,
+            "delete_event",
+            data,
+            target={"entity_id": TEST_ENTITY},
+            blocking=True,
+        )
+
+    return _delete
+
+
 GetEventsFn = Callable[[str, str], Awaitable[dict[str, Any]]]
 
 
@@ -118,11 +136,7 @@ def get_events_fixture(
 
 def event_fields(data: dict[str, str]) -> dict[str, str]:
     """Filter event API response to minimum fields."""
-    return {
-        k: data.get(k)
-        for k in ["summary", "start", "end", "recurrence_id"]
-        if data.get(k)
-    }
+    return {k: data.get(k) for k in ["summary", "start", "end"] if data.get(k)}
 
 
 async def test_empty_calendar(hass, setup_integration, get_events):
@@ -277,107 +291,34 @@ async def test_recurring_event(setup_integration, create_event, get_events):
             "summary": "Monday meeting",
             "start": {"dateTime": "2022-08-29T09:00:00-06:00"},
             "end": {"dateTime": "2022-08-29T10:00:00-06:00"},
-            "recurrence_id": "20220829T090000",
         },
         {
             "summary": "Monday meeting",
             "start": {"dateTime": "2022-09-05T09:00:00-06:00"},
             "end": {"dateTime": "2022-09-05T10:00:00-06:00"},
-            "recurrence_id": "20220905T090000",
         },
         {
             "summary": "Monday meeting",
             "start": {"dateTime": "2022-09-12T09:00:00-06:00"},
             "end": {"dateTime": "2022-09-12T10:00:00-06:00"},
-            "recurrence_id": "20220912T090000",
         },
         {
             "summary": "Monday meeting",
             "start": {"dateTime": "2022-09-19T09:00:00-06:00"},
             "end": {"dateTime": "2022-09-19T10:00:00-06:00"},
-            "recurrence_id": "20220919T090000",
         },
-    ]
-
-
-class Client:
-    """Test client with helper methods for calendar websocket."""
-
-    def __init__(self, client):
-        """Initialize Client."""
-        self.client = client
-        self.id = 0
-
-    async def cmd(self, cmd: str, payload: dict[str, Any] = None) -> dict[str, Any]:
-        """Send a command and receive the json result."""
-        self.id += 1
-        await self.client.send_json(
-            {
-                "id": self.id,
-                "type": f"calendar/event/{cmd}",
-                **(payload if payload is not None else {}),
-            }
-        )
-        resp = await self.client.receive_json()
-        assert resp.get("id") == self.id
-        return resp
-
-    async def cmd_result(self, cmd: str, payload: dict[str, Any] = None) -> Any:
-        """Send a command and parse the result."""
-        resp = await self.cmd(cmd, payload)
-        assert resp.get("success")
-        assert resp.get("type") == "result"
-        return resp.get("result")
-
-
-ClientFixture = Callable[[], Client]
-
-
-@pytest.fixture
-async def ws_client(
-    hass_ws_client: Callable[[...], ClientWebSocketResponse]
-) -> ClientFixture:
-    """Fixture for creating the test websocket client."""
-
-    async def create_client() -> Client:
-        ws_client = await hass_ws_client()
-        return Client(ws_client)
-
-    return create_client
-
-
-async def test_websocket_create(
-    ws_client: ClientFixture, setup_integration: None, get_events: GetEventsFn
-):
-    """Test websocket create command."""
-    client = await ws_client()
-    await client.cmd_result(
-        "create",
-        {
-            "entity_id": TEST_ENTITY,
-            "event": {
-                "summary": "Bastille Day Party",
-                "dtstart": "1997-07-14T17:00:00+00:00",
-                "dtend": "1997-07-15T04:00:00+00:00",
-            },
-        },
-    )
-    events = await get_events("1997-07-14T00:00:00", "1997-07-16T00:00:00")
-    assert list(map(event_fields, events)) == [
-        {
-            "summary": "Bastille Day Party",
-            "start": {"dateTime": "1997-07-14T11:00:00-06:00"},
-            "end": {"dateTime": "1997-07-14T22:00:00-06:00"},
-        }
     ]
 
 
 async def test_websocket_delete(
-    ws_client: ClientFixture, setup_integration: None, get_events: GetEventsFn
+    setup_integration: None,
+    get_events: GetEventsFn,
+    create_event: Callable[[dict[str, Any]], Awaitable[None]],
+    delete_event: Callable[[dict[str, Any]], Awaitable[None]],
 ):
     """Test websocket delete command."""
-    client = await ws_client()
-    result = await client.cmd_result(
+
+    await create_event(
         "create",
         {
             "entity_id": TEST_ENTITY,
@@ -388,7 +329,6 @@ async def test_websocket_delete(
             },
         },
     )
-    assert "uid" in result
 
     events = await get_events("1997-07-14T00:00:00", "1997-07-16T00:00:00")
     assert list(map(event_fields, events)) == [
@@ -398,13 +338,13 @@ async def test_websocket_delete(
             "end": {"dateTime": "1997-07-14T22:00:00-06:00"},
         }
     ]
+    uid = "ABC"  # result["uid"]
 
     # Delete the event
-    result = await client.cmd_result(
-        "delete",
+    await delete_event(
         {
             "entity_id": TEST_ENTITY,
-            "uid": result["uid"],
+            "uid": uid,
         },
     )
     events = await get_events("1997-07-14T00:00:00", "1997-07-16T00:00:00")
@@ -412,12 +352,13 @@ async def test_websocket_delete(
 
 
 async def test_websocket_delete_recurring(
-    ws_client: ClientFixture, setup_integration: None, get_events: GetEventsFn
+    setup_integration: None,
+    get_events: GetEventsFn,
+    create_event: Callable[[dict[str, Any]], Awaitable[None]],
+    delete_event: Callable[[dict[str, Any]], Awaitable[None]],
 ):
     """Test deleting a recurring event."""
-    client = await ws_client()
-    result = await client.cmd_result(
-        "create",
+    await create_event(
         {
             "entity_id": TEST_ENTITY,
             "event": {
@@ -426,10 +367,9 @@ async def test_websocket_delete_recurring(
                 "dtend": "2022-08-22T09:00:00",
                 "rrule": "FREQ=DAILY",
             },
-        },
+        }
     )
-    assert "uid" in result
-    uid = result["uid"]
+    uid = "ABC"  # result["uid"]
 
     events = await get_events("2022-08-22T00:00:00", "2022-08-26T00:00:00")
     assert list(map(event_fields, events)) == [
@@ -460,8 +400,7 @@ async def test_websocket_delete_recurring(
     ]
 
     # Cancel a single instance and confirm it was removed
-    await client.cmd_result(
-        "delete",
+    await delete_event(
         {
             "entity_id": TEST_ENTITY,
             "uid": uid,
@@ -491,8 +430,7 @@ async def test_websocket_delete_recurring(
     ]
 
     # Delete all and future and confirm multiple were removed
-    await client.cmd_result(
-        "delete",
+    await delete_event(
         {
             "entity_id": TEST_ENTITY,
             "uid": uid,
@@ -508,43 +446,4 @@ async def test_websocket_delete_recurring(
             "end": {"dateTime": "2022-08-22T09:00:00-06:00"},
             "recurrence_id": "20220822T083000",
         },
-    ]
-
-
-async def test_websocket_update(
-    ws_client: ClientFixture, setup_integration: None, get_events: GetEventsFn
-):
-    """Test websocket update command."""
-    client = await ws_client()
-    result = await client.cmd_result(
-        "create",
-        {
-            "entity_id": TEST_ENTITY,
-            "event": {
-                "summary": "Bastille Day Party",
-                "dtstart": "1997-07-14T17:00:00+00:00",
-                "dtend": "1997-07-15T04:00:00+00:00",
-            },
-        },
-    )
-    assert "uid" in result
-
-    # Update the event summary
-    result = await client.cmd_result(
-        "update",
-        {
-            "entity_id": TEST_ENTITY,
-            "event": {
-                "uid": result["uid"],
-                "summary": "July Party",
-            },
-        },
-    )
-    events = await get_events("1997-07-14T00:00:00", "1997-07-16T00:00:00")
-    assert list(map(event_fields, events)) == [
-        {
-            "summary": "July Party",
-            "start": {"dateTime": "1997-07-14T11:00:00-06:00"},
-            "end": {"dateTime": "1997-07-14T22:00:00-06:00"},
-        }
     ]

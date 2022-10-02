@@ -201,7 +201,4 @@ def _get_calendar_event(event: Event) -> CalendarEvent:
         end=event.end,
         description=event.description,
         location=event.location,
-        uid=event.uid,
-        rrule=event.rrule.as_rrule_str() if event.rrule else None,
-        recurrence_id=event.recurrence_id,
     )
