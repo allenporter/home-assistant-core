@@ -142,9 +142,6 @@ def fake_schedule(
     ):
         yield schedule
 
-=======
->>>>>>> Template platform implementation
-
 @pytest.fixture(autouse=True)
 async def setup_calendar(hass: HomeAssistant, fake_schedule: FakeSchedule) -> None:
     """Initialize the demo calendar."""
