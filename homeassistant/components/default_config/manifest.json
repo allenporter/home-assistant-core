@@ -10,6 +10,7 @@
     "cloud",
     "conversation",
     "counter",
+    "data_source",
     "dhcp",
     "energy",
     "frontend",
