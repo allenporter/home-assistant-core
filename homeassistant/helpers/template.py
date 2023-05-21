@@ -5,7 +5,14 @@ from ast import literal_eval
 import asyncio
 import base64
 import collections.abc
-from collections.abc import Awaitable, Callable, Collection, Generator, Iterable, MutableMapping
+from collections.abc import (
+    Awaitable,
+    Callable,
+    Collection,
+    Generator,
+    Iterable,
+    MutableMapping,
+)
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from datetime import datetime, timedelta
@@ -2491,7 +2498,7 @@ class TemplateEnvironment(ImmutableSandboxedEnvironment):
         self.globals["today_at"] = hassfunction(today_at)
         self.filters["today_at"] = self.globals["today_at"]
 
-        for component in hass.data[_TEMPLATE_PLATFORMS]:
+        for component in hass.data.get(_TEMPLATE_PLATFORMS, []):
             self.globals[component] = TemplatePlatform(
                 hass,
                 component,

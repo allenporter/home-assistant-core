@@ -1,16 +1,3 @@
-<<<<<<< HEAD
-"""Test fixtures for calendar sensor platforms."""
-import pytest
-
-from homeassistant.core import HomeAssistant
-from homeassistant.setup import async_setup_component
-
-
-@pytest.fixture(autouse=True)
-async def setup_homeassistant(hass: HomeAssistant):
-    """Set up the homeassistant integration."""
-    await async_setup_component(hass, "homeassistant", {})
-=======
 """Test fixtures for calendar component."""
 from __future__ import annotations
 
@@ -23,6 +10,7 @@ import pytest
 
 from homeassistant.components import calendar
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 import homeassistant.util.dt as dt_util
 
 from tests.common import async_fire_time_changed
@@ -102,4 +90,9 @@ def fake_schedule(hass, freezer):
         new=schedule.async_get_events,
     ):
         yield schedule
->>>>>>> Template platform implementation
+
+
+@pytest.fixture(autouse=True)
+async def setup_homeassistant(hass: HomeAssistant):
+    """Set up the homeassistant integration."""
+    await async_setup_component(hass, "homeassistant", {})
