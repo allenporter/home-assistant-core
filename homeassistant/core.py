@@ -132,6 +132,7 @@ BLOCK_LOG_TIMEOUT = 60
 
 # How long we wait for the result of a service call
 SERVICE_CALL_LIMIT = 10  # seconds
+ServiceCallResult = dict[str, Any] | None
 
 
 class ConfigSource(StrEnum):
@@ -1662,7 +1663,7 @@ class Service:
 
     def __init__(
         self,
-        func: Callable[[ServiceCall], Coroutine[Any, Any, None] | None],
+        func: Callable[[ServiceCall], Coroutine[Any, Any, ServiceCallResult] | None],
         schema: vol.Schema | None,
         domain: str,
         service: str,
@@ -1734,7 +1735,10 @@ class ServiceRegistry:
         self,
         domain: str,
         service: str,
-        service_func: Callable[[ServiceCall], Coroutine[Any, Any, None] | None],
+        service_func: Callable[
+            [ServiceCall],
+            Coroutine[Any, Any, ServiceCallResult] | None,
+        ],
         schema: vol.Schema | None = None,
     ) -> None:
         """Register a service.
@@ -1750,7 +1754,9 @@ class ServiceRegistry:
         self,
         domain: str,
         service: str,
-        service_func: Callable[[ServiceCall], Coroutine[Any, Any, None] | None],
+        service_func: Callable[
+            [ServiceCall], Coroutine[Any, Any, ServiceCallResult] | None
+        ],
         schema: vol.Schema | None = None,
     ) -> None:
         """Register a service.
@@ -1809,7 +1815,7 @@ class ServiceRegistry:
         context: Context | None = None,
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
-    ) -> bool | None:
+    ) -> ServiceCallResult:
         """Call a service.
 
         See description of async_call for details.
@@ -1830,7 +1836,7 @@ class ServiceRegistry:
         context: Context | None = None,
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
-    ) -> bool | None:
+    ) -> ServiceCallResult:
         """Call a service.
 
         Specify blocking=True to wait until service is executed.
@@ -1907,18 +1913,20 @@ class ServiceRegistry:
             raise asyncio.CancelledError
         if task.done():
             # Propagate any exceptions that might have happened during service call.
-            task.result()
-            # Service call completed successfully!
-            return True
+            return task.result()
+
         # Service call task did not complete before timeout expired.
         # Let it keep running in background.
         self._run_service_in_background(task, service_call)
         _LOGGER.debug("Service did not complete before timeout: %s", service_call)
-        return False
+        raise HomeAssistantError(
+            f"Service did not complete before timeout, and will continue running: {repr(service_call)}",
+        )
 
     def _run_service_in_background(
         self,
-        coro_or_task: Coroutine[Any, Any, None] | asyncio.Task[None],
+        coro_or_task: Coroutine[Any, Any, ServiceCallResult]
+        | asyncio.Task[ServiceCallResult],
         service_call: ServiceCall,
     ) -> None:
         """Run service call in background, catching and logging any exceptions."""
@@ -1944,18 +1952,21 @@ class ServiceRegistry:
 
     async def _execute_service(
         self, handler: Service, service_call: ServiceCall
-    ) -> None:
+    ) -> ServiceCallResult:
         """Execute a service."""
         if handler.job.job_type == HassJobType.Coroutinefunction:
-            await cast(Callable[[ServiceCall], Awaitable[None]], handler.job.target)(
+            return await cast(
+                Callable[[ServiceCall], Coroutine[Any, Any, ServiceCallResult]],
+                handler.job.target,
+            )(service_call)
+        if handler.job.job_type == HassJobType.Callback:
+            return cast(Callable[[ServiceCall], ServiceCallResult], handler.job.target)(
                 service_call
             )
-        elif handler.job.job_type == HassJobType.Callback:
-            cast(Callable[[ServiceCall], None], handler.job.target)(service_call)
-        else:
-            await self._hass.async_add_executor_job(
-                cast(Callable[[ServiceCall], None], handler.job.target), service_call
-            )
+        return await self._hass.async_add_executor_job(
+            cast(Callable[[ServiceCall], ServiceCallResult], handler.job.target),
+            service_call,
+        )
 
 
 class Config:

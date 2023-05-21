@@ -240,7 +240,11 @@ async def test_call_from_config(hass: HomeAssistant) -> None:
 
 async def test_service_call(hass: HomeAssistant) -> None:
     """Test service call with templating."""
-    calls = async_mock_service(hass, "test_domain", "test_service")
+    replies = [
+        {"test-reply": "test-value"},
+        {"test-reply": "test-value"},
+    ]
+    calls = async_mock_service(hass, "test_domain", "test_service", replies=replies)
     config = {
         "service": "{{ 'test_domain.test_service' }}",
         "entity_id": "hello.world",
@@ -252,7 +256,7 @@ async def test_service_call(hass: HomeAssistant) -> None:
         "target": {"area_id": "test-area-id", "entity_id": "will.be_overridden"},
     }
 
-    await service.async_call_from_config(hass, config)
+    reply = await service.async_call_from_config(hass, config, blocking=True)
     await hass.async_block_till_done()
 
     assert dict(calls[0].data) == {
@@ -265,6 +269,7 @@ async def test_service_call(hass: HomeAssistant) -> None:
         "entity_id": ["hello.world"],
         "area_id": ["test-area-id"],
     }
+    assert reply == {"test-reply": "test-value"}
 
     config = {
         "service": "{{ 'test_domain.test_service' }}",
@@ -275,7 +280,7 @@ async def test_service_call(hass: HomeAssistant) -> None:
         },
     }
 
-    await service.async_call_from_config(hass, config)
+    reply = await service.async_call_from_config(hass, config, blocking=True)
     await hass.async_block_till_done()
 
     assert dict(calls[1].data) == {
@@ -283,13 +288,14 @@ async def test_service_call(hass: HomeAssistant) -> None:
         "device_id": ["abcdef", "fedcba"],
         "entity_id": ["light.static", "light.dynamic"],
     }
+    assert reply == {"test-reply": "test-value"}
 
     config = {
         "service": "{{ 'test_domain.test_service' }}",
         "target": "{{ var_target }}",
     }
 
-    await service.async_call_from_config(
+    reply = await service.async_call_from_config(
         hass,
         config,
         variables={

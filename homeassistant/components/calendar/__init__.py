@@ -8,7 +8,7 @@ from http import HTTPStatus
 from itertools import groupby
 import logging
 import re
-from typing import Any, cast, final
+from typing import Any, Final, cast, final
 
 from aiohttp import web
 from dateutil.rrule import rrulestr
@@ -63,6 +63,12 @@ _LOGGER = logging.getLogger(__name__)
 DOMAIN = "calendar"
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 SCAN_INTERVAL = datetime.timedelta(seconds=60)
+
+SERVICE_LIST_EVENTS: Final = "list_events"
+SERVICE_LIST_EVENTS_SCHEMA: Final = {
+    vol.Required("start"): datetime.datetime,
+    vol.Required("end"): datetime.datetime,
+}
 
 # Don't support rrules more often than daily
 VALID_FREQS = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}
@@ -276,6 +282,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     )
 
     await component.async_setup(config)
+
+    component.async_register_entity_service(
+        SERVICE_LIST_EVENTS,
+        SERVICE_LIST_EVENTS_SCHEMA,
+        async_list_events_service,
+    )
+
     return True
 
 
@@ -743,3 +756,24 @@ async def async_create_event(entity: CalendarEntity, call: ServiceCall) -> None:
         EVENT_END: end,
     }
     await entity.async_create_event(**params)
+
+
+async def async_list_events_service(
+    calendar: CalendarEntity, service_call: ServiceCall
+) -> dict[str, Any]:
+    """Handle snapshot services calls."""
+    start = service_call.data["start"]
+    end = service_call.data["end"]
+    calendar_event_list = await calendar.async_get_events(calendar.hass, start, end)
+    return {
+        "events": [
+            {
+                "summary": event.summary,
+                "description": event.description,
+                "location": event.location,
+                "start": _get_api_date(event.start),
+                "end": _get_api_date(event.end),
+            }
+            for event in calendar_event_list
+        ]
+    }

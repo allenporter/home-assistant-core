@@ -12,8 +12,9 @@ from aiohttp.client_exceptions import ClientError
 from gcal_sync.auth import API_BASE_URL
 import pytest
 
+from homeassistant.components import calendar
 from homeassistant.components.google.const import CONF_CALENDAR_ACCESS, DOMAIN
-from homeassistant.const import STATE_OFF, STATE_ON, Platform
+from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.template import DATE_STR_FORMAT
@@ -1328,4 +1329,39 @@ async def test_event_differs_timezone(
         "location": event["location"],
         "description": event["description"],
         "supported_features": 3,
+    }
+
+
+@pytest.mark.freeze_time("2022-03-27 12:05:00+00:00")
+async def test_get_event_service(
+    hass, hass_client, mock_events_list_items, component_setup
+):
+    """Test querying the API and fetching events from the server."""
+    hass.config.set_time_zone("Asia/Baghdad")
+    event = {
+        **TEST_EVENT,
+        **upcoming(),
+    }
+    mock_events_list_items([event])
+    assert await component_setup()
+
+    now = dt_util.now()
+    start = now - datetime.timedelta(minutes=60)
+    end = now + datetime.timedelta(minutes=60)
+    result = await hass.services.async_call(
+        calendar.DOMAIN,
+        calendar.SERVICE_LIST_EVENTS,
+        {
+            ATTR_ENTITY_ID: TEST_ENTITY,
+            "start": start,
+            "end": end,
+        },
+        blocking=True,
+    )
+    events = result["events"]
+    assert len(events) == 1
+    assert {k: events[0].get(k) for k in ["summary", "start", "end"]} == {
+        "summary": TEST_EVENT["summary"],
+        "start": {"dateTime": "2022-03-27T15:05:00+03:00"},
+        "end": {"dateTime": "2022-03-27T15:10:00+03:00"},
     }

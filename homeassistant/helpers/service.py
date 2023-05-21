@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Coroutine, Iterable
 import dataclasses
 from enum import Enum
 from functools import cache, partial, wraps
@@ -26,7 +26,13 @@ from homeassistant.const import (
     ENTITY_MATCH_ALL,
     ENTITY_MATCH_NONE,
 )
-from homeassistant.core import Context, HomeAssistant, ServiceCall, callback
+from homeassistant.core import (
+    Context,
+    HomeAssistant,
+    ServiceCall,
+    ServiceCallResult,
+    callback,
+)
 from homeassistant.exceptions import (
     HomeAssistantError,
     TemplateError,
@@ -53,6 +59,8 @@ if TYPE_CHECKING:
 
     _EntityT = TypeVar("_EntityT", bound=Entity)
 
+
+_R = TypeVar("_R")
 
 CONF_SERVICE_ENTITY_ID = "entity_id"
 
@@ -245,9 +253,9 @@ def call_from_config(
     blocking: bool = False,
     variables: TemplateVarsType = None,
     validate_config: bool = True,
-) -> None:
+) -> ServiceCallResult:
     """Call a service based on a config hash."""
-    asyncio.run_coroutine_threadsafe(
+    return asyncio.run_coroutine_threadsafe(
         async_call_from_config(hass, config, blocking, variables, validate_config),
         hass.loop,
     ).result()
@@ -261,7 +269,7 @@ async def async_call_from_config(
     variables: TemplateVarsType = None,
     validate_config: bool = True,
     context: Context | None = None,
-) -> None:
+) -> ServiceCallResult:
     """Call a service based on a config hash."""
     try:
         params = async_prepare_call_from_config(
@@ -271,8 +279,8 @@ async def async_call_from_config(
         if blocking:
             raise
         _LOGGER.error(ex)
-    else:
-        await hass.services.async_call(**params, blocking=blocking, context=context)
+        return None
+    return await hass.services.async_call(**params, blocking=blocking, context=context)
 
 
 @callback
@@ -672,10 +680,10 @@ def async_set_service_schema(
 async def entity_service_call(  # noqa: C901
     hass: HomeAssistant,
     platforms: Iterable[EntityPlatform],
-    func: str | Callable[..., Any],
+    func: str | Callable[..., Coroutine[Any, Any, ServiceCallResult] | None],
     call: ServiceCall,
     required_features: Iterable[int] | None = None,
-) -> None:
+) -> ServiceCallResult:
     """Handle an entity service call.
 
     Calls all platforms simultaneously.
@@ -794,7 +802,7 @@ async def entity_service_call(  # noqa: C901
         entities.append(entity)
 
     if not entities:
-        return
+        return None
 
     done, pending = await asyncio.wait(
         [
@@ -807,8 +815,10 @@ async def entity_service_call(  # noqa: C901
         ]
     )
     assert not pending
+    retvals = []
     for future in done:
-        future.result()  # pop exception if have
+        result = future.result()  # pop exception if have
+        retvals.append(result)
 
     tasks = []
 
@@ -827,17 +837,22 @@ async def entity_service_call(  # noqa: C901
         for future in done:
             future.result()  # pop exception if have
 
+    if len(retvals) == 1:
+        return retvals[0]
+    return None
+
 
 async def _handle_entity_call(
     hass: HomeAssistant,
     entity: Entity,
-    func: str | Callable[..., Any],
+    func: str | Callable[..., Coroutine[Any, Any, ServiceCallResult] | None],
     data: dict | ServiceCall,
     context: Context,
-) -> None:
+) -> ServiceCallResult | None:
     """Handle calling service method."""
     entity.async_set_context(context)
 
+    result: asyncio.Future[ServiceCallResult] | ServiceCallResult | None = None
     if isinstance(func, str):
         result = hass.async_run_job(
             partial(getattr(entity, func), **data)  # type: ignore[arg-type]
@@ -848,7 +863,7 @@ async def _handle_entity_call(
     # Guard because callback functions do not return a task when passed to
     # async_run_job.
     if result is not None:
-        await result
+        result = await result
 
     if asyncio.iscoroutine(result):
         _LOGGER.error(
@@ -859,7 +874,8 @@ async def _handle_entity_call(
             func,
             entity.entity_id,
         )
-        await result
+        result = await result
+    return cast(ServiceCallResult | None, result)
 
 
 @bind_hass
@@ -868,7 +884,7 @@ def async_register_admin_service(
     hass: HomeAssistant,
     domain: str,
     service: str,
-    service_func: Callable[[ServiceCall], Awaitable[None] | None],
+    service_func: Callable[[ServiceCall], Awaitable[ServiceCallResult] | None],
     schema: vol.Schema = vol.Schema({}, extra=vol.PREVENT_EXTRA),
 ) -> None:
     """Register a service that requires admin access."""
