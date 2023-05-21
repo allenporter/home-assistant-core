@@ -2498,7 +2498,7 @@ class TemplateEnvironment(ImmutableSandboxedEnvironment):
         self.globals["today_at"] = hassfunction(today_at)
         self.filters["today_at"] = self.globals["today_at"]
 
-        for component in hass.data.get(_TEMPLATE_PLATFORMS, []):
+        for component in hass.data.get(_TEMPLATE_PLATFORMS):
             self.globals[component] = TemplatePlatform(
                 hass,
                 component,

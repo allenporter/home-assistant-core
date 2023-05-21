@@ -36,6 +36,7 @@ class FakeSchedule:
         self,
         start: datetime.timedelta,
         end: datetime.timedelta,
+        summary: str | None = None,
         description: str = None,
         location: str = None,
     ) -> dict[str, Any]:
@@ -43,7 +44,7 @@ class FakeSchedule:
         event = calendar.CalendarEvent(
             start=start,
             end=end,
-            summary=f"Event {secrets.token_hex(16)}",  # Arbitrary unique data
+            summary=summary if summary else f"Event {secrets.token_hex(16)}",
             description=description,
             location=location,
         )
@@ -60,8 +61,11 @@ class FakeSchedule:
         assert start_date < end_date
         values = []
         for event in self.events:
-            if start_date < event.start < end_date or start_date < event.end < end_date:
-                values.append(event)
+            if event.start_datetime_local >= end_date:
+                continue
+            if event.end_datetime_local < start_date:
+                continue
+            values.append(event)
         return values
 
     async def fire_time(self, trigger_time: datetime.datetime) -> None:
@@ -70,8 +74,17 @@ class FakeSchedule:
         async_fire_time_changed(self.hass, trigger_time)
         await self.hass.async_block_till_done()
 
-    async def fire_until(self, end: datetime.timedelta) -> None:
+    async def fire_until(self, end: datetime.datetime) -> None:
         """Simulate the passage of time by firing alarms until the time is reached."""
+
+        current_time = dt_util.as_utc(self.freezer())
+        if (end - current_time) > (TEST_UPDATE_INTERVAL * 2):
+            # Jump ahead to right before the target alarm them to remove
+            # unnecessary waiting, before advancing in smaller increments below.
+            # This leaves time for multiple update intervals to refresh the set
+            # of upcoming events
+            await self.fire_time(end - TEST_UPDATE_INTERVAL * 2)
+
         while dt_util.utcnow() < end:
             self.freezer.tick(TEST_TIME_ADVANCE_INTERVAL)
             await self.fire_time(dt_util.utcnow())

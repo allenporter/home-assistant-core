@@ -39,4 +39,5 @@ async def async_get_events(
 TEMPLATE_FUNCTIONS = {
     "example_call",
     "get_events",
+    "async_get_events",
 }

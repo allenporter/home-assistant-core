@@ -61,6 +61,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     for component in "calendar":
         platform = await _async_get_template_platform(hass, component)
+        _LOGGER.debug("template platform=%s", platform)
         for name in getattr(platform, "TEMPLATE_FUNCTIONS"):
             if not (func := getattr(platform, name)):
                 raise ValueError(
