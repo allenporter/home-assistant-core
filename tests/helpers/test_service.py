@@ -1,7 +1,6 @@
 """Test service helpers."""
 from collections import OrderedDict
 from copy import deepcopy
-from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -452,51 +451,6 @@ async def test_service_call_all_none(hass: HomeAssistant, target) -> None:
     await hass.async_block_till_done()
 
     assert dict(calls[0].data) == {"entity_id": target}
-
-
-@pytest.mark.parametrize(
-    ("replies", "expected_result"),
-    [
-        ([{"test-reply": "test-value1"}], {"test-reply": "test-value1"}),
-        ([None], None),
-        (None, None),
-    ],
-    ids=(
-        "dict_reply",
-        "reply_none",
-        "no_return_value",
-    ),
-)
-async def test_service_call_return_values(
-    hass: HomeAssistant, replies: list[Any] | None, expected_result: Any
-) -> None:
-    """Test service call that has return values."""
-    calls = async_mock_service(hass, "test_domain", "test_service", replies=replies)
-    reply = await hass.services.async_call(
-        "test_domain",
-        "test_service",
-        service_data={},
-        blocking=True,
-        return_values=True,
-    )
-    await hass.async_block_till_done()
-    assert len(calls) == 1
-    assert reply == expected_result
-
-
-async def test_service_call_return_values_requires_blocking(
-    hass: HomeAssistant,
-) -> None:
-    """Test that non-blocking service calls cannot return values."""
-    async_mock_service(hass, "test_domain", "test_service")
-    with pytest.raises(ValueError, match="when blocking=False"):
-        await hass.services.async_call(
-            "test_domain",
-            "test_service",
-            service_data={},
-            blocking=False,
-            return_values=True,
-        )
 
 
 async def test_extract_entity_ids(hass: HomeAssistant) -> None:
