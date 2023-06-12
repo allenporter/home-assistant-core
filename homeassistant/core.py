@@ -132,7 +132,7 @@ BLOCK_LOG_TIMEOUT = 60
 
 # How long we wait for the result of a service call
 SERVICE_CALL_LIMIT = 10  # seconds
-ServiceResult = dict[str, Any] | None
+ServiceResult = bool | dict[str, Any] | None
 
 
 class ConfigSource(StrEnum):
@@ -1868,8 +1868,8 @@ class ServiceRegistry:
         a `HomeAssistantError`.
 
         If return_values=True, indicates that the caller can consume return values
-        from the service, if any. Return values are a dict. This can only be
-        used with blocking=True.
+        from the service, if any. Return values are a dict or None if the service does
+        not support return values. Return values can only be used with blocking=True.
 
         This method will fire an event to indicate the service has been called.
 
@@ -1944,7 +1944,9 @@ class ServiceRegistry:
             # Propagate any exceptions that might have happened during service call.
             result = task.result()
             # Service call completed successfully!
-            if not return_values or not handler.result_schema:
+            if not return_values:
+                return True
+            if not handler.result_schema:
                 return None
             try:
                 return cast(ServiceResult, handler.result_schema(result))
