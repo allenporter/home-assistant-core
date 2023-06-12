@@ -1659,7 +1659,7 @@ class StateMachine:
 class Service:
     """Representation of a callable service."""
 
-    __slots__ = ["job", "schema", "domain", "service"]
+    __slots__ = ["job", "schema", "domain", "service", "result_schema"]
 
     def __init__(
         self,
@@ -1667,11 +1667,12 @@ class Service:
         schema: vol.Schema | None,
         domain: str,
         service: str,
-        context: Context | None = None,
+        result_schema: vol.Schema | None,
     ) -> None:
         """Initialize a service."""
         self.job = HassJob(func, f"service {domain}.{service}")
         self.schema = schema
+        self.result_schema = result_schema
 
 
 class ServiceCall:
@@ -1758,16 +1759,29 @@ class ServiceRegistry:
             [ServiceCall], Coroutine[Any, Any, ServiceResult] | None
         ],
         schema: vol.Schema | None = None,
+        result_schema: vol.Schema | None = None,
     ) -> None:
         """Register a service.
 
-        Schema is called to coerce and validate the service data.
+        Schema is called to coerce and validate the service data. The result schema (optional)
+        allows the service call to support dict return values and is used to validate the result.
 
         This method must be run in the event loop.
         """
+        if result_schema and not isinstance(result_schema.schema, dict):
+            raise ValueError(
+                f"Services result schema must be a dict, was: {result_schema}"
+            )
+
         domain = domain.lower()
         service = service.lower()
-        service_obj = Service(service_func, schema, domain, service)
+        service_obj = Service(
+            service_func,
+            schema,
+            domain,
+            service,
+            result_schema,
+        )
 
         if domain in self._services:
             self._services[domain][service] = service_obj
@@ -1928,11 +1942,20 @@ class ServiceRegistry:
             raise asyncio.CancelledError
         if task.done():
             # Propagate any exceptions that might have happened during service call.
-            task_result = task.result()
+            result = task.result()
             # Service call completed successfully!
-            if return_values:
-                return task_result
-            return None
+            if not return_values or not handler.result_schema:
+                return None
+            try:
+                return cast(ServiceResult, handler.result_schema(result))
+            except vol.Invalid:
+                _LOGGER.debug(
+                    "Invalid response data for service call %s.%s: %s",
+                    domain,
+                    service,
+                    result,
+                )
+                raise
 
         # Service call task did not complete before timeout expired.
         # Let it keep running in background.

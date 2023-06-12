@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import array
 import asyncio
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import functools
 import gc
 import logging
@@ -1093,7 +1093,16 @@ async def test_serviceregistry_return_values(hass: HomeAssistant) -> None:
         """Service handler coroutine."""
         return {"test-reply": "test-value1"}
 
-    hass.services.async_register("test_domain", "test_service", service_handler)
+    hass.services.async_register(
+        "test_domain",
+        "test_service",
+        service_handler,
+        result_schema=vol.Schema(
+            {
+                vol.Required("test-reply"): str,
+            }
+        ),
+    )
     result = await hass.services.async_call(
         "test_domain",
         "test_service",
@@ -1112,7 +1121,16 @@ async def test_serviceregistry_async_return_values(hass: HomeAssistant) -> None:
         """Service handler coroutine."""
         return {"test-reply": "test-value1"}
 
-    hass.services.async_register("test_domain", "test_service", service_handler)
+    hass.services.async_register(
+        "test_domain",
+        "test_service",
+        service_handler,
+        result_schema=vol.Schema(
+            {
+                vol.Required("test-reply"): str,
+            }
+        ),
+    )
     result = await hass.services.async_call(
         "test_domain",
         "test_service",
@@ -1136,6 +1154,83 @@ async def test_services_call_return_values_requires_blocking(
             service_data={},
             blocking=False,
             return_values=True,
+        )
+
+
+async def test_serviceregistry_return_values_requires_schema(
+    hass: HomeAssistant,
+) -> None:
+    """Test service call return values are not returned when there is no result schema."""
+
+    def service_handler(_) -> ServiceResult:
+        """Service handler coroutine."""
+        return {"test-reply": "test-value1"}
+
+    hass.services.async_register("test_domain", "test_service", service_handler)
+    result = await hass.services.async_call(
+        "test_domain",
+        "test_service",
+        service_data={},
+        blocking=True,
+        return_values=True,
+    )
+    await hass.async_block_till_done()
+    assert result is None
+
+
+@pytest.mark.parametrize(
+    ("return_value", "expected_error"),
+    [
+        (True, "expected a dictionary"),
+        (False, "expected a dictionary"),
+        ("some-value", "expected a dictionary"),
+        ({"not-in-schema": "value"}, "extra keys not allowed"),
+        ({"service-result": date(2023, 6, 11)}, "expected str for dictionary value"),
+    ],
+)
+async def test_serviceregistry_return_values_invalid(
+    hass: HomeAssistant, return_value: Any, expected_error: str
+) -> None:
+    """Test service call return values are not returned when there is no result schema."""
+
+    def service_handler(_) -> ServiceResult:
+        """Service handler coroutine."""
+        return return_value
+
+    hass.services.async_register(
+        "test_domain",
+        "test_service",
+        service_handler,
+        result_schema=vol.Schema(
+            {
+                vol.Required("service-result"): str,
+            }
+        ),
+    )
+    with pytest.raises(vol.Invalid, match=expected_error):
+        await hass.services.async_call(
+            "test_domain",
+            "test_service",
+            service_data={},
+            blocking=True,
+            return_values=True,
+        )
+        await hass.async_block_till_done()
+
+
+async def test_serviceregistry_result_schema_type(hass: HomeAssistant) -> None:
+    """Test that a service result schema only supports dictionaries."""
+
+    def service_handler(_) -> ServiceResult:
+        """Service handler coroutine."""
+        return 42
+
+    with pytest.raises(ValueError, match="schema must be a dict"):
+        hass.services.async_register(
+            "test_domain",
+            "test_service",
+            service_handler,
+            result_schema=vol.Schema(int),
         )
 
 

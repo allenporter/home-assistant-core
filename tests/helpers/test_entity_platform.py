@@ -6,6 +6,7 @@ from typing import Any
 from unittest.mock import ANY, Mock, patch
 
 import pytest
+import voluptuous as vol
 
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, PERCENTAGE
 from homeassistant.core import CoreState, HomeAssistant, callback
@@ -1539,7 +1540,16 @@ async def test_platforms_service_return_values(hass: HomeAssistant) -> None:
         entities.append(entity)
         return {"test-reply": "test-value1"}
 
-    entity_platform.async_register_entity_service("hello", {}, handle_service)
+    entity_platform.async_register_entity_service(
+        "hello",
+        {},
+        handle_service,
+        result_schema=vol.Schema(
+            {
+                vol.Required("test-reply"): str,
+            }
+        ),
+    )
 
     result = await hass.services.async_call(
         "mock_platform",

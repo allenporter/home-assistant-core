@@ -222,6 +222,7 @@ class EntityComponent(Generic[_EntityT]):
         schema: dict[str | vol.Marker, Any] | vol.Schema,
         func: str | Callable[..., Any],
         required_features: list[int] | None = None,
+        result_schema: vol.Schema | None = None,
     ) -> None:
         """Register an entity service."""
         if isinstance(schema, dict):
@@ -235,7 +236,9 @@ class EntityComponent(Generic[_EntityT]):
                 self.hass, self._platforms.values(), func, call, required_features
             )
 
-        self.hass.services.async_register(self.domain, name, handle_service, schema)
+        self.hass.services.async_register(
+            self.domain, name, handle_service, schema, result_schema
+        )
 
     async def async_setup_platform(
         self,

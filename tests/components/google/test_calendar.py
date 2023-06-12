@@ -1358,6 +1358,7 @@ async def test_get_event_service(
         },
         blocking=True,
     )
+    assert result
     events = result["events"]
     assert len(events) == 1
     assert {k: events[0].get(k) for k in ["summary", "start", "end"]} == {

@@ -812,6 +812,7 @@ class EntityPlatform:
         schema: dict[str, Any] | vol.Schema,
         func: str | Callable[..., Any],
         required_features: Iterable[int] | None = None,
+        result_schema: vol.Schema | None = None,
     ) -> None:
         """Register an entity service.
 
@@ -838,7 +839,7 @@ class EntityPlatform:
             )
 
         self.hass.services.async_register(
-            self.platform_name, name, handle_service, schema
+            self.platform_name, name, handle_service, schema, result_schema
         )
 
     async def _update_entity_states(self, now: datetime) -> None:

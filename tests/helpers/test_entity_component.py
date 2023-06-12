@@ -540,7 +540,14 @@ async def test_register_entity_service_return_values(hass: HomeAssistant) -> Non
     await component.async_add_entities([entity])
 
     component.async_register_entity_service(
-        "hello", {"some": str}, "async_called_by_service"
+        "hello",
+        {"some": str},
+        "async_called_by_service",
+        result_schema=vol.Schema(
+            {
+                vol.Required("test-reply"): str,
+            }
+        ),
     )
     result = await hass.services.async_call(
         DOMAIN,
