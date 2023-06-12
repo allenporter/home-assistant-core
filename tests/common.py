@@ -286,7 +286,7 @@ def async_mock_service(
     domain: str,
     service: str,
     schema: vol.Schema | None = None,
-    replies: list | None = None,
+    replies: list[dict[str, Any]] | None = None,
 ) -> list[ServiceCall]:
     """Set up a fake service & return a calls log list to this service."""
     calls = []
@@ -296,9 +296,7 @@ def async_mock_service(
         """Mock service call."""
         calls.append(call)
         if replies:
-            _LOGGER.debug("Returning mock_service_log:%s", replies[-1])
             return replies.pop(0)
-        _LOGGER.debug("Replyin")
         return None
 
     hass.services.async_register(domain, service, mock_service_log, schema=schema)

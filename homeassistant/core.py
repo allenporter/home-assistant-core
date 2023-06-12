@@ -132,7 +132,7 @@ BLOCK_LOG_TIMEOUT = 60
 
 # How long we wait for the result of a service call
 SERVICE_CALL_LIMIT = 10  # seconds
-ServiceCallResult = dict[str, Any] | None
+ServiceCallResult = bool | dict[str, Any] | None
 
 
 class ConfigSource(StrEnum):
@@ -1815,6 +1815,7 @@ class ServiceRegistry:
         context: Context | None = None,
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
+        return_values: bool = False,
     ) -> ServiceCallResult:
         """Call a service.
 
@@ -1822,7 +1823,14 @@ class ServiceRegistry:
         """
         return asyncio.run_coroutine_threadsafe(
             self.async_call(
-                domain, service, service_data, blocking, context, limit, target
+                domain,
+                service,
+                service_data,
+                blocking,
+                context,
+                limit,
+                target,
+                return_values,
             ),
             self._hass.loop,
         ).result()
@@ -1836,14 +1844,17 @@ class ServiceRegistry:
         context: Context | None = None,
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
+        return_values: bool = False,
     ) -> ServiceCallResult:
         """Call a service.
 
         Specify blocking=True to wait until service is executed.
-        Waits a maximum of limit, which may be None for no timeout.
+        Waits a maximum of limit, which may be None for no timeout. If the
+        service does not execute successfully within the limit, will raise
+        a `HomeAssistantError`.
 
-        If blocking = True, will return boolean if service executed
-        successfully within limit.
+        If return_values=True, indicates that the caller can consume return values
+        from the service, if any. This can only be used with blocking=True.
 
         This method will fire an event to indicate the service has been called.
 
@@ -1856,6 +1867,9 @@ class ServiceRegistry:
         service = service.lower()
         context = context or Context()
         service_data = service_data or {}
+
+        if return_values and not blocking:
+            raise ValueError("Invalid argument return_values=True when blocking=False")
 
         try:
             handler = self._services[domain][service]
@@ -1913,7 +1927,10 @@ class ServiceRegistry:
             raise asyncio.CancelledError
         if task.done():
             # Propagate any exceptions that might have happened during service call.
-            return task.result()
+            task_result = task.result()
+            if return_values:
+                return task_result
+            return True
 
         # Service call task did not complete before timeout expired.
         # Let it keep running in background.

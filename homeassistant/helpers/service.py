@@ -253,10 +253,16 @@ def call_from_config(
     blocking: bool = False,
     variables: TemplateVarsType = None,
     validate_config: bool = True,
-) -> ServiceCallResult:
+) -> None:
     """Call a service based on a config hash."""
-    return asyncio.run_coroutine_threadsafe(
-        async_call_from_config(hass, config, blocking, variables, validate_config),
+    asyncio.run_coroutine_threadsafe(
+        async_call_from_config(
+            hass,
+            config,
+            blocking,
+            variables,
+            validate_config,
+        ),
         hass.loop,
     ).result()
 
@@ -269,7 +275,7 @@ async def async_call_from_config(
     variables: TemplateVarsType = None,
     validate_config: bool = True,
     context: Context | None = None,
-) -> ServiceCallResult:
+) -> None:
     """Call a service based on a config hash."""
     try:
         params = async_prepare_call_from_config(
@@ -279,8 +285,12 @@ async def async_call_from_config(
         if blocking:
             raise
         _LOGGER.error(ex)
-        return None
-    return await hass.services.async_call(**params, blocking=blocking, context=context)
+    else:
+        await hass.services.async_call(
+            **params,
+            blocking=blocking,
+            context=context,
+        )
 
 
 @callback
@@ -633,9 +643,9 @@ async def async_get_all_descriptions(
                     "description": yaml_description.get("description", ""),
                     "fields": yaml_description.get("fields", {}),
                 }
-
-                if "target" in yaml_description:
-                    description["target"] = yaml_description["target"]
+                for field in ("target", "response"):
+                    if field in yaml_description:
+                        description[field] = yaml_description[field]
 
                 descriptions_cache[cache_key] = description
 
