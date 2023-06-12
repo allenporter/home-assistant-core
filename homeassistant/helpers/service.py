@@ -643,9 +643,9 @@ async def async_get_all_descriptions(
                     "description": yaml_description.get("description", ""),
                     "fields": yaml_description.get("fields", {}),
                 }
-                for field in ("target", "response"):
-                    if field in yaml_description:
-                        description[field] = yaml_description[field]
+
+                if "target" in yaml_description:
+                    description["target"] = yaml_description["target"]
 
                 descriptions_cache[cache_key] = description
 

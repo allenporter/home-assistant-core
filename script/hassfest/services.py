@@ -44,21 +44,12 @@ FIELD_SCHEMA = vol.Schema(
     }
 )
 
-RESPONSE_FIELD_SCHEMA = vol.Schema(
-    {
-        vol.Required("description"): str,
-        vol.Optional("name"): str,
-        vol.Optional("example"): exists,
-    }
-)
-
 SERVICE_SCHEMA = vol.Schema(
     {
         vol.Required("description"): str,
         vol.Optional("name"): str,
         vol.Optional("target"): vol.Any(selector.TargetSelector.CONFIG_SCHEMA, None),
         vol.Optional("fields"): vol.Schema({str: FIELD_SCHEMA}),
-        vol.Optional("response"): vol.Schema({str: RESPONSE_FIELD_SCHEMA}),
     }
 )
 
