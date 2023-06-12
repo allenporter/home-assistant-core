@@ -33,7 +33,7 @@ from homeassistant.const import (
     __version__,
 )
 import homeassistant.core as ha
-from homeassistant.core import HassJob, HomeAssistant, ServiceCallResult, State
+from homeassistant.core import HassJob, HomeAssistant, ServiceResult, State
 from homeassistant.exceptions import (
     InvalidEntityFormatError,
     InvalidStateError,
@@ -957,9 +957,7 @@ async def test_serviceregistry_call_with_blocking_done_in_time(
     assert registered_events[0].data["domain"] == "test_domain"
     assert registered_events[0].data["service"] == "register_calls"
 
-    assert await hass.services.async_call(
-        "test_domain", "REGISTER_CALLS", blocking=True
-    )
+    await hass.services.async_call("test_domain", "REGISTER_CALLS", blocking=True)
     assert len(calls) == 1
 
 
@@ -981,9 +979,7 @@ async def test_serviceregistry_async_service(hass: HomeAssistant) -> None:
 
     hass.services.async_register("test_domain", "register_calls", service_handler)
 
-    assert await hass.services.async_call(
-        "test_domain", "REGISTER_CALLS", blocking=True
-    )
+    await hass.services.async_call("test_domain", "REGISTER_CALLS", blocking=True)
     assert len(calls) == 1
 
 
@@ -1000,9 +996,7 @@ async def test_serviceregistry_async_service_partial(hass: HomeAssistant) -> Non
     )
     await hass.async_block_till_done()
 
-    assert await hass.services.async_call(
-        "test_domain", "REGISTER_CALLS", blocking=True
-    )
+    await hass.services.async_call("test_domain", "REGISTER_CALLS", blocking=True)
     assert len(calls) == 1
 
 
@@ -1017,9 +1011,7 @@ async def test_serviceregistry_callback_service(hass: HomeAssistant) -> None:
 
     hass.services.async_register("test_domain", "register_calls", service_handler)
 
-    assert await hass.services.async_call(
-        "test_domain", "REGISTER_CALLS", blocking=True
-    )
+    await hass.services.async_call("test_domain", "REGISTER_CALLS", blocking=True)
     assert len(calls) == 1
 
 
@@ -1097,7 +1089,7 @@ async def test_serviceregistry_callback_service_raise_exception(
 async def test_serviceregistry_return_values(hass: HomeAssistant) -> None:
     """Test service call for a service that has return values."""
 
-    def service_handler(_) -> ServiceCallResult:
+    def service_handler(_) -> ServiceResult:
         """Service handler coroutine."""
         return {"test-reply": "test-value1"}
 
@@ -1116,7 +1108,7 @@ async def test_serviceregistry_return_values(hass: HomeAssistant) -> None:
 async def test_serviceregistry_async_return_values(hass: HomeAssistant) -> None:
     """Test service call for an async service that has return values."""
 
-    async def service_handler(_) -> ServiceCallResult:
+    async def service_handler(_) -> ServiceResult:
         """Service handler coroutine."""
         return {"test-reply": "test-value1"}
 

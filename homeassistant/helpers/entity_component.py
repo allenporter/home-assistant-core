@@ -22,7 +22,7 @@ from homeassistant.core import (
     Event,
     HomeAssistant,
     ServiceCall,
-    ServiceCallResult,
+    ServiceResult,
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError
@@ -229,7 +229,7 @@ class EntityComponent(Generic[_EntityT]):
 
         async def handle_service(
             call: ServiceCall,
-        ) -> ServiceCallResult:
+        ) -> ServiceResult:
             """Handle the service."""
             return await service.entity_service_call(
                 self.hass, self._platforms.values(), func, call, required_features

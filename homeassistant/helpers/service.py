@@ -30,7 +30,7 @@ from homeassistant.core import (
     Context,
     HomeAssistant,
     ServiceCall,
-    ServiceCallResult,
+    ServiceResult,
     callback,
 )
 from homeassistant.exceptions import (
@@ -690,10 +690,10 @@ def async_set_service_schema(
 async def entity_service_call(  # noqa: C901
     hass: HomeAssistant,
     platforms: Iterable[EntityPlatform],
-    func: str | Callable[..., Coroutine[Any, Any, ServiceCallResult] | None],
+    func: str | Callable[..., Coroutine[Any, Any, ServiceResult] | None],
     call: ServiceCall,
     required_features: Iterable[int] | None = None,
-) -> ServiceCallResult:
+) -> ServiceResult:
     """Handle an entity service call.
 
     Calls all platforms simultaneously.
@@ -855,14 +855,14 @@ async def entity_service_call(  # noqa: C901
 async def _handle_entity_call(
     hass: HomeAssistant,
     entity: Entity,
-    func: str | Callable[..., Coroutine[Any, Any, ServiceCallResult] | None],
+    func: str | Callable[..., Coroutine[Any, Any, ServiceResult] | None],
     data: dict | ServiceCall,
     context: Context,
-) -> ServiceCallResult | None:
+) -> ServiceResult | None:
     """Handle calling service method."""
     entity.async_set_context(context)
 
-    task: asyncio.Future[ServiceCallResult] | None = None
+    task: asyncio.Future[ServiceResult] | None = None
     if isinstance(func, str):
         task = hass.async_run_job(
             partial(getattr(entity, func), **data)  # type: ignore[arg-type]
@@ -872,7 +872,7 @@ async def _handle_entity_call(
 
     # Guard because callback functions do not return a task when passed to
     # async_run_job.
-    result: ServiceCallResult = None
+    result: ServiceResult = None
     if task is not None:
         result = await task
 
@@ -896,7 +896,7 @@ def async_register_admin_service(
     hass: HomeAssistant,
     domain: str,
     service: str,
-    service_func: Callable[[ServiceCall], Awaitable[ServiceCallResult] | None],
+    service_func: Callable[[ServiceCall], Awaitable[ServiceResult] | None],
     schema: vol.Schema = vol.Schema({}, extra=vol.PREVENT_EXTRA),
 ) -> None:
     """Register a service that requires admin access."""

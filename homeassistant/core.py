@@ -132,7 +132,7 @@ BLOCK_LOG_TIMEOUT = 60
 
 # How long we wait for the result of a service call
 SERVICE_CALL_LIMIT = 10  # seconds
-ServiceCallResult = bool | dict[str, Any] | None
+ServiceResult = dict[str, Any] | None
 
 
 class ConfigSource(StrEnum):
@@ -1663,7 +1663,7 @@ class Service:
 
     def __init__(
         self,
-        func: Callable[[ServiceCall], Coroutine[Any, Any, ServiceCallResult] | None],
+        func: Callable[[ServiceCall], Coroutine[Any, Any, ServiceResult] | None],
         schema: vol.Schema | None,
         domain: str,
         service: str,
@@ -1737,7 +1737,7 @@ class ServiceRegistry:
         service: str,
         service_func: Callable[
             [ServiceCall],
-            Coroutine[Any, Any, ServiceCallResult] | None,
+            Coroutine[Any, Any, ServiceResult] | None,
         ],
         schema: vol.Schema | None = None,
     ) -> None:
@@ -1755,7 +1755,7 @@ class ServiceRegistry:
         domain: str,
         service: str,
         service_func: Callable[
-            [ServiceCall], Coroutine[Any, Any, ServiceCallResult] | None
+            [ServiceCall], Coroutine[Any, Any, ServiceResult] | None
         ],
         schema: vol.Schema | None = None,
     ) -> None:
@@ -1816,7 +1816,7 @@ class ServiceRegistry:
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
         return_values: bool = False,
-    ) -> ServiceCallResult:
+    ) -> ServiceResult:
         """Call a service.
 
         See description of async_call for details.
@@ -1845,7 +1845,7 @@ class ServiceRegistry:
         limit: float | None = SERVICE_CALL_LIMIT,
         target: dict[str, Any] | None = None,
         return_values: bool = False,
-    ) -> ServiceCallResult:
+    ) -> ServiceResult:
         """Call a service.
 
         Specify blocking=True to wait until service is executed.
@@ -1932,7 +1932,7 @@ class ServiceRegistry:
             # Service call completed successfully!
             if return_values:
                 return task_result
-            return True
+            return None
 
         # Service call task did not complete before timeout expired.
         # Let it keep running in background.
@@ -1944,8 +1944,7 @@ class ServiceRegistry:
 
     def _run_service_in_background(
         self,
-        coro_or_task: Coroutine[Any, Any, ServiceCallResult]
-        | asyncio.Task[ServiceCallResult],
+        coro_or_task: Coroutine[Any, Any, ServiceResult] | asyncio.Task[ServiceResult],
         service_call: ServiceCall,
     ) -> None:
         """Run service call in background, catching and logging any exceptions."""
@@ -1971,19 +1970,19 @@ class ServiceRegistry:
 
     async def _execute_service(
         self, handler: Service, service_call: ServiceCall
-    ) -> ServiceCallResult:
+    ) -> ServiceResult:
         """Execute a service."""
         if handler.job.job_type == HassJobType.Coroutinefunction:
             return await cast(
-                Callable[[ServiceCall], Coroutine[Any, Any, ServiceCallResult]],
+                Callable[[ServiceCall], Coroutine[Any, Any, ServiceResult]],
                 handler.job.target,
             )(service_call)
         if handler.job.job_type == HassJobType.Callback:
-            return cast(Callable[[ServiceCall], ServiceCallResult], handler.job.target)(
+            return cast(Callable[[ServiceCall], ServiceResult], handler.job.target)(
                 service_call
             )
         return await self._hass.async_add_executor_job(
-            cast(Callable[[ServiceCall], ServiceCallResult], handler.job.target),
+            cast(Callable[[ServiceCall], ServiceResult], handler.job.target),
             service_call,
         )
 

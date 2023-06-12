@@ -38,7 +38,7 @@ from homeassistant.core import (
     Context,
     Event,
     HomeAssistant,
-    ServiceCallResult,
+    ServiceResult,
     callback,
 )
 from homeassistant.exceptions import HomeAssistantError, NoEntitySpecifiedError
@@ -1054,8 +1054,8 @@ class Entity(ABC):
         return f"<entity {self.entity_id}={self._stringify_state(self.available)}>"
 
     async def async_request_call(
-        self, coro: Coroutine[Any, Any, ServiceCallResult]
-    ) -> ServiceCallResult:
+        self, coro: Coroutine[Any, Any, ServiceResult]
+    ) -> ServiceResult:
         """Process request batched."""
         if self.parallel_updates:
             await self.parallel_updates.acquire()
