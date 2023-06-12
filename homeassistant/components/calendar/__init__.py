@@ -64,12 +64,6 @@ DOMAIN = "calendar"
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
 SCAN_INTERVAL = datetime.timedelta(seconds=60)
 
-SERVICE_LIST_EVENTS: Final = "list_events"
-SERVICE_LIST_EVENTS_SCHEMA: Final = {
-    vol.Required("start"): datetime.datetime,
-    vol.Required("end"): datetime.datetime,
-}
-
 # Don't support rrules more often than daily
 VALID_FREQS = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}
 
@@ -256,6 +250,15 @@ CALENDAR_EVENT_SCHEMA = vol.Schema(
     extra=vol.ALLOW_EXTRA,
 )
 
+SERVICE_LIST_EVENTS: Final = "list_events"
+SERVICE_LIST_EVENTS_SCHEMA: Final = {
+    vol.Required("start"): datetime.datetime,
+    vol.Required("end"): datetime.datetime,
+}
+SERVICE_LIST_EVENTS_RESULT_SCHEMA: Final = vol.Schema(
+    {vol.Required("events"): vol.All(cv.ensure_list, [CALENDAR_EVENT_SCHEMA])}
+)
+
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Track states and offer events for calendars."""
@@ -287,6 +290,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         SERVICE_LIST_EVENTS,
         SERVICE_LIST_EVENTS_SCHEMA,
         async_list_events_service,
+        result_schema=SERVICE_LIST_EVENTS_RESULT_SCHEMA,
     )
 
     return True
@@ -767,13 +771,7 @@ async def async_list_events_service(
     calendar_event_list = await calendar.async_get_events(calendar.hass, start, end)
     return {
         "events": [
-            {
-                "summary": event.summary,
-                "description": event.description,
-                "location": event.location,
-                "start": _get_api_date(event.start),
-                "end": _get_api_date(event.end),
-            }
+            dataclasses.asdict(event, dict_factory=_event_dict_factory)
             for event in calendar_event_list
         ]
     }

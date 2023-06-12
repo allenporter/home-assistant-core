@@ -1357,12 +1357,13 @@ async def test_get_event_service(
             "end": end,
         },
         blocking=True,
+        return_values=True,
     )
     assert result
     events = result["events"]
     assert len(events) == 1
-    assert {k: events[0].get(k) for k in ["summary", "start", "end"]} == {
+    assert {k: str(events[0].get(k)) for k in ["summary", "start", "end"]} == {
         "summary": TEST_EVENT["summary"],
-        "start": {"dateTime": "2022-03-27T15:05:00+03:00"},
-        "end": {"dateTime": "2022-03-27T15:10:00+03:00"},
+        "start": "2022-03-27 15:05:00+03:00",
+        "end": "2022-03-27 15:10:00+03:00",
     }
