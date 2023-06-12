@@ -810,7 +810,7 @@ async def entity_service_call(  # noqa: C901
             continue
 
         entities.append(entity)
-
+    _LOGGER.debug("XXX: %s", entities)
     if not entities:
         return None
 
@@ -829,6 +829,7 @@ async def entity_service_call(  # noqa: C901
     for future in done:
         result = future.result()  # pop exception if have
         retvals.append(result)
+    _LOGGER.debug("XXX retvals: %s", retvals)
 
     tasks = []
 
@@ -869,7 +870,8 @@ async def _handle_entity_call(
         )
     else:
         result = hass.async_run_job(func, entity, data)
-
+    _LOGGER.debug("XXX func = %s", func)
+    _LOGGER.debug("XXX result = %s", result)
     # Guard because callback functions do not return a task when passed to
     # async_run_job.
     if result is not None:
@@ -885,6 +887,7 @@ async def _handle_entity_call(
             entity.entity_id,
         )
         result = await result
+    _LOGGER.debug("result=%s", result)
     return cast(ServiceCallResult | None, result)
 
 

@@ -474,7 +474,7 @@ async def test_extract_all_use_match_all(
 
 
 async def test_register_entity_service(hass: HomeAssistant) -> None:
-    """Test not expanding a group."""
+    """Test registering and calling an entity service."""
     entity = MockEntity(entity_id=f"{DOMAIN}.entity")
     calls = []
 
@@ -522,6 +522,36 @@ async def test_register_entity_service(hass: HomeAssistant) -> None:
         DOMAIN, "hello", {"area_id": ENTITY_MATCH_NONE, "some": "data"}, blocking=True
     )
     assert len(calls) == 2
+
+
+async def test_register_entity_service_return_values(hass: HomeAssistant) -> None:
+    """Test calling an entity service with return values."""
+    entity = MockEntity(entity_id=f"{DOMAIN}.entity")
+    calls = []
+
+    def appender(**kwargs) -> dict[str, str]:
+        calls.append(kwargs)
+        return {"test-reply": "test-value1"}
+
+    entity.async_called_by_service = appender
+
+    component = EntityComponent(_LOGGER, DOMAIN, hass)
+    await component.async_setup({})
+    await component.async_add_entities([entity])
+
+    component.async_register_entity_service(
+        "hello", {"some": str}, "async_called_by_service"
+    )
+    result = await hass.services.async_call(
+        DOMAIN,
+        "hello",
+        {"entity_id": entity.entity_id, "some": "data"},
+        blocking=True,
+        return_values=True,
+    )
+    assert len(calls) == 1
+    assert calls[0] == {"some": "data"}
+    assert result == {"test-reply": "test-value1"}
 
 
 async def test_platforms_shutdown_on_stop(hass: HomeAssistant) -> None:

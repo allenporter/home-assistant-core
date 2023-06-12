@@ -1525,6 +1525,34 @@ async def test_platforms_sharing_services(hass: HomeAssistant) -> None:
     assert entity2 in entities
 
 
+async def test_platforms_service_return_values(hass: HomeAssistant) -> None:
+    """Test a platform service with return values."""
+    entity_platform = MockEntityPlatform(
+        hass, domain="mock_integration", platform_name="mock_platform", platform=None
+    )
+    entity = MockEntity(entity_id="mock_integration.entity_1")
+    await entity_platform.async_add_entities([entity])
+
+    entities = []
+
+    def handle_service(entity, data):
+        entities.append(entity)
+        return {"test-reply": "test-value1"}
+
+    entity_platform.async_register_entity_service("hello", {}, handle_service)
+
+    result = await hass.services.async_call(
+        "mock_platform",
+        "hello",
+        {"entity_id": "all"},
+        blocking=True,
+        return_values=True,
+    )
+    assert len(entities) == 1
+    assert entity in entities
+    assert result == {"test-reply": "test-value1"}
+
+
 async def test_invalid_entity_id(hass: HomeAssistant) -> None:
     """Test specifying an invalid entity id."""
     platform = MockEntityPlatform(hass)
