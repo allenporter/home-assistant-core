@@ -810,7 +810,7 @@ async def entity_service_call(  # noqa: C901
             continue
 
         entities.append(entity)
-    _LOGGER.debug("XXX: %s", entities)
+
     if not entities:
         return None
 
@@ -829,7 +829,6 @@ async def entity_service_call(  # noqa: C901
     for future in done:
         result = future.result()  # pop exception if have
         retvals.append(result)
-    _LOGGER.debug("XXX retvals: %s", retvals)
 
     tasks = []
 
@@ -863,19 +862,19 @@ async def _handle_entity_call(
     """Handle calling service method."""
     entity.async_set_context(context)
 
-    result: asyncio.Future[ServiceCallResult] | ServiceCallResult | None = None
+    task: asyncio.Future[ServiceCallResult] | None = None
     if isinstance(func, str):
-        result = hass.async_run_job(
+        task = hass.async_run_job(
             partial(getattr(entity, func), **data)  # type: ignore[arg-type]
         )
     else:
-        result = hass.async_run_job(func, entity, data)
-    _LOGGER.debug("XXX func = %s", func)
-    _LOGGER.debug("XXX result = %s", result)
+        task = hass.async_run_job(func, entity, data)
+
     # Guard because callback functions do not return a task when passed to
     # async_run_job.
-    if result is not None:
-        result = await result
+    result: ServiceCallResult = None
+    if task is not None:
+        result = await task
 
     if asyncio.iscoroutine(result):
         _LOGGER.error(
@@ -887,8 +886,8 @@ async def _handle_entity_call(
             entity.entity_id,
         )
         result = await result
-    _LOGGER.debug("result=%s", result)
-    return cast(ServiceCallResult | None, result)
+
+    return result
 
 
 @bind_hass

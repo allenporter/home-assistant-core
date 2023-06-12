@@ -1854,7 +1854,8 @@ class ServiceRegistry:
         a `HomeAssistantError`.
 
         If return_values=True, indicates that the caller can consume return values
-        from the service, if any. This can only be used with blocking=True.
+        from the service, if any. Return values are a dict. This can only be
+        used with blocking=True.
 
         This method will fire an event to indicate the service has been called.
 
@@ -1928,6 +1929,7 @@ class ServiceRegistry:
         if task.done():
             # Propagate any exceptions that might have happened during service call.
             task_result = task.result()
+            # Service call completed successfully!
             if return_values:
                 return task_result
             return True
