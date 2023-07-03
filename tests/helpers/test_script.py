@@ -1,7 +1,7 @@
 """The tests for the Script component."""
 import asyncio
 from contextlib import contextmanager
-from datetime import timedelta
+from datetime import datetime, timedelta
 from functools import reduce
 import logging
 import operator
@@ -371,6 +371,89 @@ async def test_calling_service_response_data(
 
     assert "Executing step service step1" in caplog.text
     assert "Executing step service step2" in caplog.text
+
+    assert_action_trace(
+        {
+            "0": [
+                {
+                    "result": {
+                        "params": {
+                            "domain": "test",
+                            "service": "script",
+                            "service_data": {},
+                            "target": {},
+                        },
+                        "running_script": False,
+                    }
+                }
+            ],
+            "1": [
+                {
+                    "result": {
+                        "params": {
+                            "domain": "test",
+                            "service": "script",
+                            "service_data": {"key": "value-12345"},
+                            "target": {},
+                        },
+                        "running_script": False,
+                    },
+                    "variables": {
+                        "my_response": {"data": "value-12345"},
+                    },
+                }
+            ],
+        }
+    )
+
+
+async def test_calling_service_response_data_list(
+    hass: HomeAssistant, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Test the calling of a service with response data."""
+    context = Context()
+
+    def mock_service(call: ServiceCall) -> ServiceResponse:
+        """Mock service call."""
+        if call.return_response:
+            return {
+                "data": [datetime(2022, 1, 1, 10, 0, 0), datetime(2022, 1, 1, 10, 0, 0)]
+            }
+        return None
+
+    hass.services.async_register(
+        "test", "script", mock_service, supports_response=SupportsResponse.OPTIONAL
+    )
+    sequence = cv.SCRIPT_SCHEMA(
+        [
+            {
+                "alias": "service step1",
+                "service": "test.script",
+                # Store the result of the service call as a variable
+                "response_variable": "my_response",
+            },
+            {
+                "alias": "service step2",
+                "repeat": {
+                    "for_each": "{{ my_response.data }}",
+                    "sequence": {
+                        "service": "test.script",
+                        "data_template": {
+                            # Enumerating the item in the list
+                            "key": "{{ repeat.item }}"
+                        },
+                    },
+                },
+            },
+        ]
+    )
+    script_obj = script.Script(hass, sequence, "Test Name", "test_domain")
+
+    await script_obj.async_run(context=context)
+    await hass.async_block_till_done()
+
+    #    assert "Executing step service step1" in caplog.text
+    #    assert "Executing step service step2" in caplog.text
 
     assert_action_trace(
         {
