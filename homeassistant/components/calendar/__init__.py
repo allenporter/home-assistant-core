@@ -5,6 +5,7 @@ from collections.abc import Callable, Iterable
 import dataclasses
 import datetime
 from http import HTTPStatus
+import inspect
 from itertools import groupby
 import logging
 import re
@@ -18,8 +19,7 @@ from homeassistant.components import frontend, http, websocket_api
 from homeassistant.components.websocket_api import ERR_NOT_FOUND, ERR_NOT_SUPPORTED
 from homeassistant.components.websocket_api.connection import ActiveConnection
 from homeassistant.config_entries import ConfigEntry
-<<<<<<< HEAD
-from homeassistant.const import STATE_OFF, STATE_ON
+from homeassistant.const import STATE_OFF, STATE_ON, Platform
 from homeassistant.core import (
     CALLBACK_TYPE,
     HomeAssistant,
@@ -28,10 +28,6 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
-=======
-from homeassistant.const import STATE_OFF, STATE_ON, Platform
-from homeassistant.core import HomeAssistant
->>>>>>> 087c98cab2 (Add calendar helper)
 from homeassistant.exceptions import HomeAssistantError
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.config_validation import (  # noqa: F401
@@ -395,7 +391,13 @@ class CalendarEvent:
             "all_day": self.all_day,
         }
 
-<<<<<<< HEAD
+    @classmethod
+    def from_dict(cls, env: dict[str, Any]) -> CalendarEvent:
+        """Initialize from a dictionary ignoring extra fields."""
+        return cls(
+            **{k: v for k, v in env.items() if k in inspect.signature(cls).parameters}
+        )
+
     def __post_init__(self) -> None:
         """Perform validation on the CalendarEvent."""
 
@@ -418,14 +420,6 @@ class CalendarEvent:
             and self.start == self.end
         ):
             self.end = self.start + datetime.timedelta(days=1)
-=======
-    @classmethod
-    def from_dict(cls, values: dict[str, Any]) -> CalendarEvent:
-        """Return a CalendarEvent representation from a dict."""
-        if "all_day" in values:
-            del values["all_day"]
-        return cls(**values)
->>>>>>> ffa6a6bc23 (Update integrations)
 
 
 def _event_dict_factory(obj: Iterable[tuple[str, Any]]) -> dict[str, str]:

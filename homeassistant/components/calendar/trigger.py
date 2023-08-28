@@ -219,7 +219,12 @@ class CalendarEventListener:
             _LOGGER.debug("Dispatching event: %s", queued_event.event)
             self._hass.async_run_hass_job(
                 self._job,
-                {"trigger": {**self._trigger_data, CALENDAR_EVENT: queued_event.as_dict()}},
+                {
+                    "trigger": {
+                        **self._trigger_data,
+                        CALENDAR_EVENT: queued_event.event.as_dict(),
+                    }
+                },
             )
 
     async def _handle_refresh(self, now_utc: datetime.datetime) -> None:

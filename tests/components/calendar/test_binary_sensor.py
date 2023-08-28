@@ -147,13 +147,13 @@ async def test_overlapping_events(hass, fake_schedule):
 
     fake_schedule.create_event(
         summary="Front light",
-        start=datetime.datetime.fromisoformat("2022-08-08 18:30:00"),
-        end=datetime.datetime.fromisoformat("2022-08-08 23:00:00"),
+        start=datetime.datetime.fromisoformat("2022-08-08 18:30:00-06:00"),
+        end=datetime.datetime.fromisoformat("2022-08-08 23:00:00-06:00"),
     )
     fake_schedule.create_event(
         summary="Back light",
-        start=datetime.datetime.fromisoformat("2022-08-08 20:30:00"),
-        end=datetime.datetime.fromisoformat("2022-08-08 22:00:00"),
+        start=datetime.datetime.fromisoformat("2022-08-08 20:30:00-06:00"),
+        end=datetime.datetime.fromisoformat("2022-08-08 22:00:00-06:00"),
     )
 
     config_entry = MockConfigEntry(

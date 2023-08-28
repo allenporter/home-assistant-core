@@ -7,11 +7,12 @@ import secrets
 from typing import Any
 from unittest.mock import patch
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 
+from homeassistant.components import calendar
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
-from homeassistant.components import calendar
 import homeassistant.util.dt as dt_util
 
 from tests.common import async_fire_time_changed
@@ -93,6 +94,17 @@ class FakeSchedule:
         while dt_util.utcnow() < end:
             self.freezer.tick(TEST_TIME_ADVANCE_INTERVAL)
             await self.fire_time(dt_util.utcnow())
+
+    async def fire_state_changes(
+        self, entity_id: str, fire_times: list[datetime.datetime]
+    ) -> list[str]:
+        """Fire alarms at the specified times and return the list of state changes."""
+        results = []
+        for fire_time in fire_times:
+            await self.fire_until(fire_time)
+            state = self.hass.states.get(entity_id)
+            results.append(state.state)
+        return results
 
 
 @pytest.fixture
