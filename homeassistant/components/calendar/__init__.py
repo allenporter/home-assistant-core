@@ -318,9 +318,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         return await component.async_setup_entry(entry)
 
     # Calendar event helper
-    await hass.config_entries.async_forward_entry_setups(
-        entry, (Platform.BINARY_SENSOR,)
-    )
+    await hass.config_entries.async_forward_entry_setups(entry, (Platform.EVENT,))
 
     entry.async_on_unload(entry.add_update_listener(config_entry_update_listener))
     return True
@@ -337,9 +335,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         component: EntityComponent[CalendarEntity] = hass.data[DOMAIN]
         return await component.async_unload_entry(entry)
 
-    return await hass.config_entries.async_unload_platforms(
-        entry, (Platform.BINARY_SENSOR,)
-    )
+    return await hass.config_entries.async_unload_platforms(entry, (Platform.EVENT,))
 
 
 def get_date(date: dict[str, Any]) -> datetime.datetime:

@@ -97,13 +97,13 @@ class FakeSchedule:
 
     async def fire_state_changes(
         self, entity_id: str, fire_times: list[datetime.datetime]
-    ) -> list[str]:
+    ) -> list[tuple[str, str]]:
         """Fire alarms at the specified times and return the list of state changes."""
         results = []
         for fire_time in fire_times:
             await self.fire_until(fire_time)
             state = self.hass.states.get(entity_id)
-            results.append(state.state)
+            results.append((state.state, state.attributes["event_type"]))
         return results
 
 

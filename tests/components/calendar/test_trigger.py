@@ -12,6 +12,7 @@ from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import asynccontextmanager
 import datetime
 import logging
+from typing import Any
 from unittest.mock import patch
 import zoneinfo
 
@@ -20,7 +21,10 @@ import pytest
 
 from homeassistant.components import calendar
 import homeassistant.components.automation as automation
-from homeassistant.components.calendar.trigger import EVENT_END, EVENT_START
+from homeassistant.components.calendar.trigger import (
+    TRIGGER_EVENT_END as EVENT_END,
+    TRIGGER_EVENT_START as EVENT_START,
+)
 from homeassistant.const import ATTR_ENTITY_ID, SERVICE_TURN_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component

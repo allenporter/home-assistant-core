@@ -1,4 +1,4 @@
-"""Tests for calendar event binary sensor."""
+"""Tests for calendar event entity."""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import pytest
 
 from homeassistant.components.calendar import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
-from homeassistant.const import STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
@@ -43,7 +42,7 @@ async def setup_calendar(hass: HomeAssistant, fake_schedule: FakeSchedule) -> No
 
 
 async def test_all_day(hass, fake_schedule):
-    """Test binary sensor matching an all day event."""
+    """Test event entity matching an all day event."""
     state = hass.states.get(CALENDAR_ENTITY_ID)
     assert state
 
@@ -66,22 +65,22 @@ async def test_all_day(hass, fake_schedule):
     await hass.config_entries.async_setup(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.LOADED
 
-    state = hass.states.get("binary_sensor.trash_day")
+    state = hass.states.get("event.trash_day")
     assert state
     assert state.name == "Trash day"
-    assert state.state == STATE_OFF
+    assert state.state == "unknown"
 
     assert await fake_schedule.fire_state_changes(
-        "binary_sensor.trash_day",
+        "event.trash_day",
         [
             datetime.datetime.fromisoformat("2022-08-07 23:59:00-06:00"),
             datetime.datetime.fromisoformat("2022-08-08 00:00:01-06:00"),
             datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
         ],
     ) == [
-        STATE_OFF,
-        STATE_ON,
-        STATE_OFF,
+        ("unknown", None),
+        ("2022-08-08T06:00:00.000+00:00", "start"),
+        ("2022-08-09T06:00:01.000+00:00", "end"),
     ]
 
 
@@ -119,13 +118,13 @@ async def test_multiple_all_day(hass, fake_schedule):
     await hass.config_entries.async_setup(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.LOADED
 
-    state = hass.states.get("binary_sensor.trash_day")
+    state = hass.states.get("event.trash_day")
     assert state
     assert state.name == "Trash day"
-    assert state.state == STATE_OFF
+    assert state.state == "unknown"
 
     assert await fake_schedule.fire_state_changes(
-        "binary_sensor.trash_day",
+        "event.trash_day",
         [
             datetime.datetime.fromisoformat("2022-08-08 00:01:00-06:00"),
             datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
@@ -133,10 +132,10 @@ async def test_multiple_all_day(hass, fake_schedule):
             datetime.datetime.fromisoformat("2022-08-15 00:01:00-06:00"),
         ],
     ) == [
-        STATE_ON,
-        STATE_OFF,
-        STATE_OFF,
-        STATE_ON,
+        ("2022-08-08T06:00:00.000+00:00", "start"),
+        ("2022-08-09T06:00:01.000+00:00", "end"),
+        ("2022-08-12T06:00:00.000+00:00", "start"),
+        ("2022-08-15T06:00:00.000+00:00", "start"),
     ]
 
 
@@ -169,13 +168,13 @@ async def test_overlapping_events(hass, fake_schedule):
     await hass.config_entries.async_setup(config_entry.entry_id)
     assert config_entry.state is ConfigEntryState.LOADED
 
-    state = hass.states.get("binary_sensor.exterior_lights")
+    state = hass.states.get("event.exterior_lights")
     assert state
     assert state.name == "Exterior lights"
-    assert state.state == STATE_OFF
+    assert state.state == "unknown"
 
     assert await fake_schedule.fire_state_changes(
-        "binary_sensor.exterior_lights",
+        "event.exterior_lights",
         [
             datetime.datetime.fromisoformat("2022-08-08 18:29:00-06:00"),
             datetime.datetime.fromisoformat("2022-08-08 18:31:00-06:00"),
@@ -184,61 +183,12 @@ async def test_overlapping_events(hass, fake_schedule):
             datetime.datetime.fromisoformat("2022-08-08 23:01:00-06:00"),
         ],
     ) == [
-        STATE_OFF,
-        STATE_ON,
-        STATE_ON,
-        STATE_ON,  # Event 2 ends but Event 1 is still active
-        STATE_OFF,
-    ]
-
-
-async def test_active_at_start(hass, fake_schedule):
-    """Test an even that is active when home assistant starts."""
-    state = hass.states.get(CALENDAR_ENTITY_ID)
-    assert state
-
-    fake_schedule.create_event(
-        summary="Vacation 1",
-        start=datetime.date.fromisoformat("2022-07-30"),
-        end=datetime.date.fromisoformat("2022-08-07"),
-    )
-    fake_schedule.create_event(
-        summary="Vacation 2",
-        start=datetime.date.fromisoformat("2022-08-09"),
-        end=datetime.date.fromisoformat("2022-08-10"),
-    )
-
-    config_entry = MockConfigEntry(
-        domain=DOMAIN,
-        data={},
-        options={
-            "entity_id": CALENDAR_ENTITY_ID,
-            "search": "vacation",
-            "name": "Vacation",
-        },
-    )
-    config_entry.add_to_hass(hass)
-    await hass.config_entries.async_setup(config_entry.entry_id)
-    assert config_entry.state is ConfigEntryState.LOADED
-
-    state = hass.states.get("binary_sensor.vacation")
-    assert state
-    assert state.name == "Vacation"
-    assert state.state == STATE_ON
-
-    assert await fake_schedule.fire_state_changes(
-        "binary_sensor.vacation",
-        [
-            datetime.datetime.fromisoformat("2022-08-06 23:00:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-07 00:00:01-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 00:00:01-06:00"),
-            datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
-            datetime.datetime.fromisoformat("2022-08-10 00:00:01-06:00"),
-        ],
-    ) == [
-        STATE_ON,
-        STATE_OFF,
-        STATE_OFF,
-        STATE_ON,
-        STATE_OFF,
+        ("unknown", None),
+        ("2022-08-09T00:30:00.000+00:00", "start"),
+        ("2022-08-09T02:30:00.000+00:00", "start"),
+        (
+            "2022-08-09T04:00:00.000+00:00",
+            "end",
+        ),  # Event 2 ends but Event 1 is still active
+        ("2022-08-09T05:00:00.000+00:00", "end"),
     ]
