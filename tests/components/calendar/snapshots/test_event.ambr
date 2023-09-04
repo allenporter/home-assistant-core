@@ -1,0 +1,529 @@
+# serializer version: 1
+# name: test_all_day
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[empty]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[lower]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[options0]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[options1]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[options2]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_all_day[upper]
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_multiple_all_day
+  list([
+    tuple(
+      '2022-08-08T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event #1',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event #1',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T06:00:01.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-09',
+          'start': '2022-08-08',
+          'summary': 'Trash day calendar event #1',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-15T06:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': True,
+          'end': '2022-08-16',
+          'start': '2022-08-15',
+          'summary': 'Trash day calendar event #2',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Trash day',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---
+# name: test_overlapping_events
+  list([
+    tuple(
+      'unknown',
+      dict({
+        'event_type': None,
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Exterior lights',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T00:30:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': False,
+          'end': '2022-08-08T23:00:00-06:00',
+          'start': '2022-08-08T18:30:00-06:00',
+          'summary': 'Front light',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Exterior lights',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T02:30:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': False,
+          'end': '2022-08-08T22:00:00-06:00',
+          'start': '2022-08-08T20:30:00-06:00',
+          'summary': 'Back light',
+        }),
+        'event_type': 'start',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Exterior lights',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T04:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': False,
+          'end': '2022-08-08T22:00:00-06:00',
+          'start': '2022-08-08T20:30:00-06:00',
+          'summary': 'Back light',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Exterior lights',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+    tuple(
+      '2022-08-09T05:00:00.000+00:00',
+      dict({
+        'calendar_event': dict({
+          'all_day': False,
+          'end': '2022-08-08T23:00:00-06:00',
+          'start': '2022-08-08T18:30:00-06:00',
+          'summary': 'Front light',
+        }),
+        'event_type': 'end',
+        'event_types': list([
+          'start',
+          'end',
+        ]),
+        'friendly_name': 'Exterior lights',
+        'icon': 'mdi:calendar-text',
+      }),
+    ),
+  ])
+# ---

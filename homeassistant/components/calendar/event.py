@@ -5,22 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 import datetime
 import logging
-from typing import Any
 
 from homeassistant.components.event import EventEntity
 
 # from homeassistant.components.sensor import PLATFORM_SCHEMA, SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import (
-    CONF_ENTITY_ID,
-    CONF_EVENT,
-    CONF_NAME,
-    CONF_OFFSET,
-    CONF_PLATFORM,
-)
-from homeassistant.core import CALLBACK_TYPE, Context, HomeAssistant, callback
+from homeassistant.const import CONF_ENTITY_ID, CONF_NAME
+from homeassistant.core import HassJob, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import entity_registry as er, trigger as trigger_helper
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -31,6 +24,12 @@ from .const import (
     DOMAIN,
     TRIGGER_EVENT_END,
     TRIGGER_EVENT_START,
+)
+from .trigger import (
+    CalendarEventListener,
+    QueuedCalendarEvent,
+    event_fetcher,
+    queued_event_fetcher,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,6 +51,8 @@ async def async_setup_entry(
     )
 
     def is_match(calendar_event: CalendarEvent) -> bool:
+        if CONF_SEARCH not in config_entry.options:
+            return True
         search = config_entry.options[CONF_SEARCH].lower()
         if calendar_event.summary and search in calendar_event.summary.lower():
             return True
@@ -59,7 +60,7 @@ async def async_setup_entry(
             return True
         return False
 
-    calendar_event_sensor = CalendarEventSensor(
+    calendar_event_sensor = CalendarEventEntity(
         name=config_entry.options[CONF_NAME],
         calendar_entity_id=calendar_entity_id,
         unique_id=config_entry.entry_id,
@@ -69,7 +70,7 @@ async def async_setup_entry(
     async_add_entities([calendar_event_sensor])
 
 
-class CalendarEventSensor(EventEntity):
+class CalendarEventEntity(EventEntity):
     """A sensor that matches a specific calednar event."""
 
     _attr_has_entity_name = True
@@ -90,7 +91,7 @@ class CalendarEventSensor(EventEntity):
         self._attr_name = name.capitalize()
         self._calendar_entity_id = calendar_entity_id
         self._event_predicate = event_predicate
-        self._unsub: CALLBACK_TYPE | None = None
+        self._listener: CalendarEventListener | None = None
 
     async def async_added_to_hass(self) -> None:
         """Register triggers for listening to calendar event state changes.
@@ -107,35 +108,31 @@ class CalendarEventSensor(EventEntity):
             raise HomeAssistantError(
                 f"Entity does not exist {self.entity_id} or is not a calendar entity"
             )
-        configs = [
-            {
-                CONF_PLATFORM: DOMAIN,
-                CONF_ENTITY_ID: self._calendar_entity_id,
-                CONF_EVENT: event_type,
-                CONF_OFFSET: ZERO,
-            }
-            for event_type in (TRIGGER_EVENT_START, TRIGGER_EVENT_END)
-        ]
-        self._unsub = await trigger_helper.async_initialize_triggers(
+
+        self._listener = CalendarEventListener(
             self.hass,
-            configs,
-            self._trigger_action,
-            DOMAIN,
-            self._attr_name,
-            _LOGGER.log,
+            HassJob(self._trigger_action),
+            queued_event_fetcher(
+                event_fetcher(self.hass, entity),
+                {TRIGGER_EVENT_START, TRIGGER_EVENT_END},
+                ZERO,
+                self._event_predicate,
+            ),
         )
+        await self._listener.async_attach()
 
     @callback
     def _trigger_action(
-        self, run_variables: dict[str, Any], context: Context | None = None
+        self,
+        queued_event: QueuedCalendarEvent,
     ) -> None:
-        trigger_data = run_variables["trigger"]
-        event_type = trigger_data[CONF_EVENT]
-        self._trigger_event(event_type, trigger_data[CALENDAR_EVENT])
+        self._trigger_event(
+            queued_event.event_type, {CALENDAR_EVENT: queued_event.event.as_dict()}
+        )
         self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         """Remove triggers."""
         await super().async_will_remove_from_hass()
-        if self._unsub:
-            self._unsub()
+        if self._listener is not None:
+            self._listener.async_detach()

@@ -48,7 +48,13 @@ class QueuedCalendarEvent:
     """An event that is queued to be fired in the future."""
 
     trigger_time: datetime.datetime
+    """The time that the calendar event should fire."""
+
     event: CalendarEvent
+    """The calendar event that fired."""
+
+    event_type: str
+    """The type of calendar event (start or end)."""
 
 
 @dataclass
@@ -105,11 +111,14 @@ def event_fetcher(hass: HomeAssistant, entity: CalendarEntity) -> EventFetcher:
 
 
 def queued_event_fetcher(
-    fetcher: EventFetcher, event_type: str, offset: datetime.timedelta
+    fetcher: EventFetcher,
+    event_types: set[str],
+    offset: datetime.timedelta,
+    event_predicate: Callable[[CalendarEvent], bool] | None = None,
 ) -> QueuedEventFetcher:
     """Build a fetcher that produces a schedule of upcoming trigger events."""
 
-    def get_trigger_time(event: CalendarEvent) -> datetime.datetime:
+    def get_trigger_time(event_type: str, event: CalendarEvent) -> datetime.datetime:
         if event_type == TRIGGER_EVENT_START:
             return event.start_datetime_local
         return event.end_datetime_local
@@ -123,12 +132,17 @@ def queued_event_fetcher(
         # Example: For an EVENT_END trigger the event may start during this
         # time span, but need to be triggered later when the end happens.
         results = []
-        for trigger_time, event in zip(
-            map(get_trigger_time, active_events), active_events
-        ):
-            if trigger_time not in offset_timespan:
+        for event in active_events:
+            if event_predicate is not None and not event_predicate(event):
                 continue
-            results.append(QueuedCalendarEvent(trigger_time + offset, event))
+            for event_type in event_types:
+                if (
+                    trigger_time := get_trigger_time(event_type, event)
+                ) not in offset_timespan:
+                    continue
+                results.append(
+                    QueuedCalendarEvent(trigger_time + offset, event, event_type)
+                )
 
         _LOGGER.debug(
             "Scan events @ %s%s found %s eligble of %s active",
@@ -155,14 +169,12 @@ class CalendarEventListener:
     def __init__(
         self,
         hass: HomeAssistant,
-        job: HassJob[..., Coroutine[Any, Any, None]],
-        trigger_data: dict[str, Any],
+        job: HassJob[..., Coroutine[Any, Any, None] | None],
         fetcher: QueuedEventFetcher,
     ) -> None:
         """Initialize CalendarEventListener."""
         self._hass = hass
         self._job = job
-        self._trigger_data = trigger_data
         self._unsub_event: CALLBACK_TYPE | None = None
         self._unsub_refresh: CALLBACK_TYPE | None = None
         self._fetcher = fetcher
@@ -219,15 +231,7 @@ class CalendarEventListener:
         while self._events and self._events[0].trigger_time <= now:
             queued_event = self._events.pop(0)
             _LOGGER.debug("Dispatching event: %s", queued_event.event)
-            self._hass.async_run_hass_job(
-                self._job,
-                {
-                    "trigger": {
-                        **self._trigger_data,
-                        CALENDAR_EVENT: queued_event.event.as_dict(),
-                    }
-                },
-            )
+            self._hass.async_run_hass_job(self._job, queued_event)
 
     async def _handle_refresh(self, now_utc: datetime.datetime) -> None:
         """Handle core config update."""
@@ -264,14 +268,27 @@ async def async_attach_trigger(
     trigger_data = {
         **trigger_info["trigger_data"],
         "platform": DOMAIN,
-        "event": event_type,
         "offset": offset,
     }
+    job = HassJob(action)
+
+    @callback
+    def fire_trigger(queued_event: QueuedCalendarEvent) -> None:
+        hass.async_run_hass_job(
+            job,
+            {
+                "trigger": {
+                    **trigger_data,
+                    CALENDAR_EVENT: queued_event.event.as_dict(),
+                    "event": queued_event.event_type,
+                }
+            },
+        )
+
     listener = CalendarEventListener(
         hass,
-        HassJob(action),
-        trigger_data,
-        queued_event_fetcher(event_fetcher(hass, entity), event_type, offset),
+        HassJob(fire_trigger),
+        queued_event_fetcher(event_fetcher(hass, entity), {event_type}, offset),
     )
     await listener.async_attach()
     return listener.async_detach

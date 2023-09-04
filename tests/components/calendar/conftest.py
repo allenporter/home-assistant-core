@@ -103,7 +103,7 @@ class FakeSchedule:
         for fire_time in fire_times:
             await self.fire_until(fire_time)
             state = self.hass.states.get(entity_id)
-            results.append((state.state, state.attributes["event_type"]))
+            results.append((state.state, dict(state.attributes)))
         return results
 
 

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import datetime
 import logging
+from typing import Any
 
 import pytest
+from syrupy.assertion import SnapshotAssertion
 
 from homeassistant.components.calendar import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
@@ -41,13 +43,23 @@ async def setup_calendar(hass: HomeAssistant, fake_schedule: FakeSchedule) -> No
     await hass.async_block_till_done()
 
 
-async def test_all_day(hass, fake_schedule):
+@pytest.mark.parametrize(
+    "options",
+    [({}), ({"search": "trash"}), ({"search": "Trash"})],
+    ids=("empty", "lower", "upper"),
+)
+async def test_all_day(
+    hass: HomeAssistant,
+    fake_schedule: FakeSchedule,
+    options: dict[str, Any],
+    snapshot: SnapshotAssertion,
+):
     """Test event entity matching an all day event."""
     state = hass.states.get(CALENDAR_ENTITY_ID)
     assert state
 
     fake_schedule.create_event(
-        summary="Trash day",
+        summary="Trash day calendar event",
         start=datetime.date.fromisoformat("2022-08-08"),
         end=datetime.date.fromisoformat("2022-08-09"),
     )
@@ -57,8 +69,8 @@ async def test_all_day(hass, fake_schedule):
         data={},
         options={
             "entity_id": CALENDAR_ENTITY_ID,
-            "search": "Trash",
-            "name": "Trash Day",
+            "name": "Trash day",
+            **options,
         },
     )
     config_entry.add_to_hass(hass)
@@ -70,27 +82,28 @@ async def test_all_day(hass, fake_schedule):
     assert state.name == "Trash day"
     assert state.state == "unknown"
 
-    assert await fake_schedule.fire_state_changes(
-        "event.trash_day",
-        [
-            datetime.datetime.fromisoformat("2022-08-07 23:59:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 00:00:01-06:00"),
-            datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
-        ],
-    ) == [
-        ("unknown", None),
-        ("2022-08-08T06:00:00.000+00:00", "start"),
-        ("2022-08-09T06:00:01.000+00:00", "end"),
-    ]
+    assert (
+        await fake_schedule.fire_state_changes(
+            "event.trash_day",
+            [
+                datetime.datetime.fromisoformat("2022-08-07 23:59:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-08 00:00:01-06:00"),
+                datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
+            ],
+        )
+        == snapshot
+    )
 
 
-async def test_multiple_all_day(hass, fake_schedule):
+async def test_multiple_all_day(
+    hass: HomeAssistant, fake_schedule: FakeSchedule, snapshot: SnapshotAssertion
+):
     """Test multiple events, some matching and some not, across a few days."""
     state = hass.states.get(CALENDAR_ENTITY_ID)
     assert state
 
     fake_schedule.create_event(
-        summary="Trash day",
+        summary="Trash day calendar event #1",
         start=datetime.date.fromisoformat("2022-08-08"),
         end=datetime.date.fromisoformat("2022-08-09"),
     )
@@ -100,7 +113,7 @@ async def test_multiple_all_day(hass, fake_schedule):
         end=datetime.date.fromisoformat("2022-08-13"),
     )
     fake_schedule.create_event(
-        summary="Trash day",
+        summary="Trash day calendar event #2",
         start=datetime.date.fromisoformat("2022-08-15"),
         end=datetime.date.fromisoformat("2022-08-16"),
     )
@@ -123,23 +136,23 @@ async def test_multiple_all_day(hass, fake_schedule):
     assert state.name == "Trash day"
     assert state.state == "unknown"
 
-    assert await fake_schedule.fire_state_changes(
-        "event.trash_day",
-        [
-            datetime.datetime.fromisoformat("2022-08-08 00:01:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
-            datetime.datetime.fromisoformat("2022-08-12 00:01:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-15 00:01:00-06:00"),
-        ],
-    ) == [
-        ("2022-08-08T06:00:00.000+00:00", "start"),
-        ("2022-08-09T06:00:01.000+00:00", "end"),
-        ("2022-08-12T06:00:00.000+00:00", "start"),
-        ("2022-08-15T06:00:00.000+00:00", "start"),
-    ]
+    assert (
+        await fake_schedule.fire_state_changes(
+            "event.trash_day",
+            [
+                datetime.datetime.fromisoformat("2022-08-08 00:01:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-09 00:00:01-06:00"),
+                datetime.datetime.fromisoformat("2022-08-12 00:01:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-15 00:01:00-06:00"),
+            ],
+        )
+        == snapshot
+    )
 
 
-async def test_overlapping_events(hass, fake_schedule):
+async def test_overlapping_events(
+    hass: HomeAssistant, fake_schedule: FakeSchedule, snapshot: SnapshotAssertion
+):
     """Test matching events that match and overlap."""
     state = hass.states.get(CALENDAR_ENTITY_ID)
     assert state
@@ -173,22 +186,16 @@ async def test_overlapping_events(hass, fake_schedule):
     assert state.name == "Exterior lights"
     assert state.state == "unknown"
 
-    assert await fake_schedule.fire_state_changes(
-        "event.exterior_lights",
-        [
-            datetime.datetime.fromisoformat("2022-08-08 18:29:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 18:31:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 20:31:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 22:01:00-06:00"),
-            datetime.datetime.fromisoformat("2022-08-08 23:01:00-06:00"),
-        ],
-    ) == [
-        ("unknown", None),
-        ("2022-08-09T00:30:00.000+00:00", "start"),
-        ("2022-08-09T02:30:00.000+00:00", "start"),
-        (
-            "2022-08-09T04:00:00.000+00:00",
-            "end",
-        ),  # Event 2 ends but Event 1 is still active
-        ("2022-08-09T05:00:00.000+00:00", "end"),
-    ]
+    assert (
+        await fake_schedule.fire_state_changes(
+            "event.exterior_lights",
+            [
+                datetime.datetime.fromisoformat("2022-08-08 18:29:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-08 18:31:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-08 20:31:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-08 22:01:00-06:00"),
+                datetime.datetime.fromisoformat("2022-08-08 23:01:00-06:00"),
+            ],
+        )
+        == snapshot
+    )
