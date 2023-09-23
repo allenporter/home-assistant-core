@@ -12,6 +12,10 @@ from homeassistant.const import (
     UnitOfVolume,
 )
 
+DOMAIN: Final = "fitbit"
+
+DEVICE_MANUFACTURER: Final = "Fitbit"
+
 ATTR_ACCESS_TOKEN: Final = "access_token"
 ATTR_REFRESH_TOKEN: Final = "refresh_token"
 ATTR_LAST_SAVED_AT: Final = "last_saved_at"
@@ -84,3 +88,24 @@ BATTERY_LEVELS: Final[dict[str, int]] = {
     "Low": 20,
     "Empty": 0,
 }
+
+
+OAUTH2_AUTHORIZE = "https://www.fitbit.com/oauth2/authorize"
+OAUTH2_TOKEN = "https://api.fitbit.com/oauth2/token"
+# These additional scopes are available and are not yet used:
+# "cardio_fitness",
+# "electrocardiogram",
+# "location",
+# "oxygen_saturation"
+# "respiratory_rate"
+# "social"
+# "temperature"
+OAUTH_SCOPES = [
+    "activity",
+    "heartrate",
+    "nutrition",
+    "profile",
+    "settings",
+    "sleep",
+    "weight",
+]
