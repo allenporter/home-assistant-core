@@ -1,6 +1,8 @@
 """Test for Roborock init."""
 from unittest.mock import patch
 
+from roborock.exceptions import RoborockTimeout
+
 from homeassistant.components.roborock.const import DOMAIN
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant
@@ -35,6 +37,20 @@ async def test_config_entry_not_ready(
     ), patch(
         "homeassistant.components.roborock.RoborockDataUpdateCoordinator._async_update_data",
         side_effect=UpdateFailed(),
+    ):
+        await async_setup_component(hass, DOMAIN, {})
+        assert mock_roborock_entry.state is ConfigEntryState.SETUP_RETRY
+
+
+async def test_timeout_error(
+    hass: HomeAssistant, mock_roborock_entry: MockConfigEntry
+) -> None:
+    """Test that when coordinator update fails, entry retries."""
+    with patch(
+        "homeassistant.components.roborock.RoborockApiClient.get_home_data",
+    ), patch(
+        "homeassistant.components.roborock.RoborockMqttClient.get_networking",
+        side_effect=RoborockTimeout(),
     ):
         await async_setup_component(hass, DOMAIN, {})
         assert mock_roborock_entry.state is ConfigEntryState.SETUP_RETRY
