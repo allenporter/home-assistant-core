@@ -13,6 +13,7 @@ from pyicloud.exceptions import (
     PyiCloudServiceNotActivatedException,
 )
 from pyicloud.services.findmyiphone import AppleDevice
+from pyicloud.services.reminders import RemindersService
 
 from homeassistant.components.zone import async_active_zone
 from homeassistant.config_entries import ConfigEntry
@@ -361,6 +362,12 @@ class IcloudAccount:
     def signal_device_update(self) -> str:
         """Event specific per Freebox entry to signal updates in devices."""
         return f"{DOMAIN}-{self._username}-device-update"
+
+    def get_reminders(self) -> RemindersService | None:
+        """Reminders in iCloud."""
+        if self.api is None:
+            return None
+        return self.api.reminders
 
 
 class IcloudDevice:
