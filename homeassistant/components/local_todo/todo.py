@@ -7,6 +7,7 @@ from ical.calendar import Calendar
 from ical.calendar_stream import IcsCalendarStream
 from ical.store import TodoStore
 from ical.todo import Todo, TodoStatus
+from ical.types import Range, Recur
 
 from homeassistant.components.todo import (
     TodoItem,
@@ -18,12 +19,16 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .const import CONF_TODO_LIST_NAME, DOMAIN
 from .store import LocalTodoListStore
 
 _LOGGER = logging.getLogger(__name__)
 
+# The local todo state can either change from a direct user action or when time
+# has passed that a new instance of a recurring todo item needs to appear.
+SCAN_INTERVAL = datetime.timedelta(minutes=15)
 
 PRODID = "-//homeassistant.io//local_todo 2.0//EN"
 PRODID_REQUIRES_MIGRATION = "-//homeassistant.io//local_todo 1.0//EN"
@@ -93,6 +98,8 @@ def _convert_item(item: TodoItem) -> Todo:
     if todo.due and not isinstance(todo.due, datetime.datetime):
         todo.due += datetime.timedelta(days=1)
     todo.description = item.description
+    if item.rrule:
+        todo.rrule = Recur.from_rrule(item.rrule)
     return todo
 
 
@@ -108,8 +115,9 @@ class LocalTodoListEntity(TodoListEntity):
         | TodoListEntityFeature.SET_DUE_DATETIME_ON_ITEM
         | TodoListEntityFeature.SET_DUE_DATE_ON_ITEM
         | TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM
+        | TodoListEntityFeature.SET_RRULE_ON_ITEM
     )
-    _attr_should_poll = False
+    _attr_should_poll = True
 
     def __init__(
         self,
@@ -127,7 +135,7 @@ class LocalTodoListEntity(TodoListEntity):
     async def async_update(self) -> None:
         """Update entity state based on the local To-do items."""
         todo_items = []
-        for item in self._calendar.todos:
+        for item in TodoStore(self._calendar).todo_list(dt_util.now()):
             if (due := item.due) and not isinstance(due, datetime.datetime):
                 due -= datetime.timedelta(days=1)
             todo_items.append(
@@ -140,6 +148,8 @@ class LocalTodoListEntity(TodoListEntity):
                     ),
                     due=due,
                     description=item.description,
+                    rrule=item.rrule.as_rrule_str() if item.rrule else None,
+                    recurrence_id=item.recurrence_id,
                 )
             )
         self._attr_todo_items = todo_items
@@ -149,22 +159,41 @@ class LocalTodoListEntity(TodoListEntity):
         todo = _convert_item(item)
         TodoStore(self._calendar).add(todo)
         await self.async_save()
-        await self.async_update_ha_state(force_refresh=True)
 
-    async def async_update_todo_item(self, item: TodoItem) -> None:
+    async def async_update_todo_item(
+        self,
+        item: TodoItem,
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
+    ) -> None:
         """Update an item to the To-do list."""
+        range_value: Range = Range.NONE
+        if recurrence_range == Range.THIS_AND_FUTURE:
+            range_value = Range.THIS_AND_FUTURE
         todo = _convert_item(item)
-        TodoStore(self._calendar).edit(todo.uid, todo)
+        TodoStore(self._calendar).edit(
+            todo.uid,
+            todo,
+            recurrence_id=recurrence_id,
+            recurrence_range=range_value,
+        )
         await self.async_save()
-        await self.async_update_ha_state(force_refresh=True)
 
-    async def async_delete_todo_items(self, uids: list[str]) -> None:
+    async def async_delete_todo_items(
+        self,
+        uids: list[str],
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
+    ) -> None:
         """Delete an item from the To-do list."""
+        range_value: Range = Range.NONE
+        if recurrence_range == Range.THIS_AND_FUTURE:
+            range_value = Range.THIS_AND_FUTURE
+
         store = TodoStore(self._calendar)
         for uid in uids:
-            store.delete(uid)
+            store.delete(uid, recurrence_id=recurrence_id, recurrence_range=range_value)
         await self.async_save()
-        await self.async_update_ha_state(force_refresh=True)
 
     async def async_move_todo_item(
         self, uid: str, previous_uid: str | None = None

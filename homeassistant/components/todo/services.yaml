@@ -46,6 +46,13 @@ add_item:
       example: "A more complete description of the to-do item than that provided by the summary."
       selector:
         text:
+    rrule:
+      filter:
+        supported_features:
+          - todo.TodoListEntityFeature.SET_RRULE_ON_ITEM
+      example: "FREQ=DAILY"
+      selector:
+        text:
 update_item:
   target:
     entity:
@@ -91,6 +98,19 @@ update_item:
       example: "A more complete description of the to-do item than that provided by the summary."
       selector:
         text:
+    recurrence_id:
+      filter:
+        supported_features:
+          - todo.TodoListEntityFeature.SET_RRULE_ON_ITEM
+      selector:
+        text:
+    rrule:
+      filter:
+        supported_features:
+          - todo.TodoListEntityFeature.SET_RRULE_ON_ITEM
+      example: "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+      selector:
+        text:
 remove_item:
   target:
     entity:
@@ -102,7 +122,12 @@ remove_item:
       required: true
       selector:
         text:
-
+    recurrence_id:
+      filter:
+        supported_features:
+          - todo.TodoListEntityFeature.SET_RRULE_ON_ITEM
+      selector:
+        text:
 remove_completed_items:
   target:
     entity:

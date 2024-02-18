@@ -6,6 +6,7 @@ import datetime
 import logging
 from typing import TYPE_CHECKING, Any, final
 
+from dateutil.rrule import rrulestr
 import voluptuous as vol
 
 from homeassistant.components import frontend, websocket_api
@@ -36,6 +37,7 @@ from .const import (
     ATTR_DUE,
     ATTR_DUE_DATE,
     ATTR_DUE_DATETIME,
+    ATTR_RRULE,
     DOMAIN,
     TodoItemStatus,
     TodoListEntityFeature,
@@ -52,6 +54,33 @@ _LOGGER = logging.getLogger(__name__)
 SCAN_INTERVAL = datetime.timedelta(seconds=60)
 
 ENTITY_ID_FORMAT = DOMAIN + ".{}"
+
+# Don't support rrules more often than daily
+VALID_FREQS = {"DAILY", "WEEKLY", "MONTHLY", "YEARLY"}
+
+
+def _validate_rrule(value: Any) -> str:
+    """Validate a recurrence rule string."""
+    if value is None:
+        raise vol.Invalid("rrule value is None")
+
+    if not isinstance(value, str):
+        raise vol.Invalid("rrule value expected a string")
+
+    try:
+        rrulestr(value)
+    except ValueError as err:
+        raise vol.Invalid(f"Invalid rrule '{value}': {err}") from err
+
+    # Example format: FREQ=DAILY;UNTIL=...
+    rule_parts = dict(s.split("=", 1) for s in value.split(";"))
+    if not (freq := rule_parts.get("FREQ")):
+        raise vol.Invalid("rrule did not contain FREQ")
+
+    if freq not in VALID_FREQS:
+        raise vol.Invalid(f"Invalid frequency for rule: {value}")
+
+    return str(value)
 
 
 @dataclasses.dataclass
@@ -89,6 +118,12 @@ TODO_ITEM_FIELDS = [
         validation=vol.Any(cv.string, None),
         todo_item_field=ATTR_DESCRIPTION,
         required_feature=TodoListEntityFeature.SET_DESCRIPTION_ON_ITEM,
+    ),
+    TodoItemFieldDescription(
+        service_field=ATTR_RRULE,
+        validation=_validate_rrule,
+        todo_item_field=ATTR_RRULE,
+        required_feature=TodoListEntityFeature.SET_RRULE_ON_ITEM,
     ),
 ]
 
@@ -150,6 +185,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     vol.Optional("status"): vol.In(
                         {TodoItemStatus.NEEDS_ACTION, TodoItemStatus.COMPLETED},
                     ),
+                    vol.Optional("recurrence_id"): cv.string,
+                    vol.Optional("recurrence_range"): cv.string,
                     **TODO_ITEM_FIELD_SCHEMA,
                 }
             ),
@@ -166,6 +203,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         cv.make_entity_service_schema(
             {
                 vol.Required("item"): vol.All(cv.ensure_list, [cv.string]),
+                vol.Optional("recurrence_id"): cv.string,
+                vol.Optional("recurrence_range"): cv.string,
             }
         ),
         _async_remove_todo_items,
@@ -234,10 +273,32 @@ class TodoItem:
     the entity.
     """
 
+    rrule: str | None = None
+    """An rfc5545 recurrence rule string for repeating the To-do item.
+
+    This field may be set when TodoListEntityFeature.RRULE is supported by the
+    entity.
+    """
+
+    recurrence_id: str | None = None
+    """An identifier for a single instance in a recurring To-do item series.
+
+    When omitted, the uid references the entire series of a recurring To-do item.
+    """
+
 
 CACHED_PROPERTIES_WITH_ATTR_ = {
     "todo_items",
 }
+
+
+def _validate_unique_uids(uids: Iterable[str]) -> None:
+    """Validate that all items have unique uids."""
+    uid_set = set({})
+    for uid in uids:
+        if uid in uid_set:
+            raise ValueError(f"Duplicate To-do item uid: {uid}")
+        uid_set.add(uid)
 
 
 class TodoListEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
@@ -252,6 +313,7 @@ class TodoListEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
         items = self.todo_items
         if items is None:
             return None
+        _validate_unique_uids(item.uid for item in items if item.uid)
         return sum([item.status == TodoItemStatus.NEEDS_ACTION for item in items])
 
     @cached_property
@@ -311,7 +373,8 @@ class TodoListEntity(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
             return
 
         todo_items: list[JsonValueType] = [
-            dataclasses.asdict(item) for item in self.todo_items or ()
+            dataclasses.asdict(item, dict_factory=_api_items_factory)
+            for item in self.todo_items or ()
         ]
         for listener in self._update_listeners:
             listener(todo_items)
@@ -508,7 +571,14 @@ async def _async_update_todo_item(entity: TodoListEntity, call: ServiceCall) -> 
             if desc.service_field in call.data
         }
     )
-    await entity.async_update_todo_item(item=TodoItem(**updated_data))
+    recurrence_range: str | None = None
+    if recurrence_id := call.data.get("recurrence_id"):
+        recurrence_range = call.data.get("recurrence_range")
+    await entity.async_update_todo_item(
+        item=TodoItem(**updated_data),
+        recurrence_id=recurrence_id,
+        recurrence_range=recurrence_range,
+    )
 
 
 async def _async_remove_todo_items(entity: TodoListEntity, call: ServiceCall) -> None:
@@ -524,7 +594,18 @@ async def _async_remove_todo_items(entity: TodoListEntity, call: ServiceCall) ->
                 translation_placeholders={"item": item},
             )
         uids.append(found.uid)
-    await entity.async_delete_todo_items(uids=uids)
+    recurrence_range: str | None = None
+    if recurrence_id := call.data.get("recurrence_id"):
+        if len(uids) > 1:
+            raise ServiceValidationError(
+                "recurrence_id is only valid when removing a single item",
+                translation_domain=DOMAIN,
+                translation_key="recurrence_id_invalid",
+            )
+        recurrence_range = call.data.get("recurrence_range")
+    await entity.async_delete_todo_items(
+        uids=uids, recurrence_id=recurrence_id, recurrence_range=recurrence_range
+    )
 
 
 async def _async_get_todo_items(

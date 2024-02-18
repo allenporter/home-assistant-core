@@ -1,9 +1,12 @@
 """Tests for todo platform of local_todo."""
 
 from collections.abc import Awaitable, Callable
+import datetime
 import textwrap
 from typing import Any
+import zoneinfo
 
+from freezegun.api import FrozenDateTimeFactory
 import pytest
 from syrupy.assertion import SnapshotAssertion
 
@@ -12,6 +15,7 @@ from homeassistant.core import HomeAssistant
 
 from .conftest import TEST_ENTITY
 
+from tests.common import async_fire_time_changed
 from tests.typing import WebSocketGenerator
 
 
@@ -70,6 +74,19 @@ EXPECTED_ADD_ITEM = {
     "status": "needs_action",
     "summary": "replace batteries",
 }
+
+
+async def get_items(hass: HomeAssistant, entity_id: str) -> list[dict[str, str]]:
+    """Fetch items using the To-do get_items service."""
+    result = await hass.services.async_call(
+        TODO_DOMAIN,
+        "get_items",
+        {},
+        target={"entity_id": entity_id},
+        blocking=True,
+        return_response=True,
+    )
+    return result[entity_id]["items"]
 
 
 @pytest.mark.parametrize(
@@ -758,3 +775,182 @@ async def test_susbcribe(
     assert items[0]["summary"] == "milk"
     assert items[0]["status"] == "needs_action"
     assert "uid" in items[0]
+
+
+async def test_recurring_item(
+    hass: HomeAssistant,
+    setup_integration: None,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Test a recurring todo item and completing individual items in the series."""
+
+    current_time = datetime.datetime(
+        2024, 1, 10, 8, 0, 0, tzinfo=zoneinfo.ZoneInfo("America/Regina")
+    )
+    freezer.move_to(current_time)
+    async_fire_time_changed(hass, current_time)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        "add_item",
+        {
+            "item": "Walk the dog",
+            "due_date": "2024-01-10",
+            "rrule": "FREQ=DAILY",
+        },
+        target={"entity_id": TEST_ENTITY},
+        blocking=True,
+    )
+
+    # Verify we see the Todo item instance that is due today
+    items = await get_items(hass, TEST_ENTITY)
+    assert len(items) == 1
+    uid = items[0]["uid"]
+    assert items[0] == {
+        "uid": uid,
+        "status": "needs_action",
+        "summary": "Walk the dog",
+        "due": "2024-01-10",
+        "rrule": "FREQ=DAILY",
+        "recurrence_id": "20240110",
+    }
+
+    # Mark the Todo item instance as completed
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        "update_item",
+        {"item": uid, "status": "completed", "recurrence_id": "20240110"},
+        target={"entity_id": TEST_ENTITY},
+        blocking=True,
+    )
+
+    # Verify the Todo item is completed and that we still see the instance
+    # that is due today.
+    assert await get_items(hass, TEST_ENTITY) == [
+        {
+            "uid": uid,
+            "status": "completed",
+            "summary": "Walk the dog",
+            "due": "2024-01-10",
+            "recurrence_id": "20240110",
+        }
+    ]
+
+    # Advance to the next day. A new instance of the Todo item should appear
+    # that is due that day.
+    freezer.tick(datetime.timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert await get_items(hass, TEST_ENTITY) == [
+        {
+            "uid": uid,
+            "status": "needs_action",
+            "summary": "Walk the dog",
+            "due": "2024-01-11",
+            "rrule": "FREQ=DAILY",
+            "recurrence_id": "20240111",
+        }
+    ]
+
+    # Advance to the next day again. The previous incomplete instance is now
+    # replaced with a new incomplete instance for today.
+    freezer.tick(datetime.timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    assert await get_items(hass, TEST_ENTITY) == [
+        {
+            "uid": uid,
+            "status": "needs_action",
+            "summary": "Walk the dog",
+            "due": "2024-01-12",
+            "rrule": "FREQ=DAILY",
+            "recurrence_id": "20240112",
+        }
+    ]
+
+
+async def test_edit_recurring_item_series(
+    hass: HomeAssistant,
+    setup_integration: None,
+    freezer: FrozenDateTimeFactory,
+) -> None:
+    """Test making edits to all instances of a todo item."""
+
+    current_time = datetime.datetime(
+        2024, 1, 10, 8, 0, 0, tzinfo=zoneinfo.ZoneInfo("America/Regina")
+    )
+    freezer.move_to(current_time)
+    async_fire_time_changed(hass, current_time)
+    await hass.async_block_till_done()
+
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        "add_item",
+        {
+            "item": "Walk the dog",
+            "due_date": "2024-01-10",
+            "rrule": "FREQ=DAILY",
+        },
+        target={"entity_id": TEST_ENTITY},
+        blocking=True,
+    )
+
+    # Advance to the next day again and a new instance of the task appears
+    freezer.tick(datetime.timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    # Verify we see the Todo item instance that is due today
+    items = await get_items(hass, TEST_ENTITY)
+    assert len(items) == 1
+    uid = items[0]["uid"]
+    assert items[0] == {
+        "uid": uid,
+        "status": "needs_action",
+        "summary": "Walk the dog",
+        "due": "2024-01-11",
+        "rrule": "FREQ=DAILY",
+        "recurrence_id": "20240111",
+    }
+
+    # Change the summary of all instances in the series
+    await hass.services.async_call(
+        TODO_DOMAIN,
+        "update_item",
+        {
+            "item": uid,
+            "rename": "Walk the cat",
+        },
+        target={"entity_id": TEST_ENTITY},
+        blocking=True,
+    )
+
+    # Verify the todo instance is updated
+    items = await get_items(hass, TEST_ENTITY)
+    assert items[0] == {
+        "uid": uid,
+        "status": "needs_action",
+        "summary": "Walk the cat",
+        "due": "2024-01-11",
+        "rrule": "FREQ=DAILY",
+        "recurrence_id": "20240111",
+    }
+
+    # Advance to the next day again and a new instance of the task appears
+    freezer.tick(datetime.timedelta(days=1))
+    async_fire_time_changed(hass)
+    await hass.async_block_till_done()
+
+    # Verify edits are applied to the new instance
+    items = await get_items(hass, TEST_ENTITY)
+    assert items[0] == {
+        "uid": uid,
+        "status": "needs_action",
+        "summary": "Walk the cat",
+        "due": "2024-01-12",
+        "rrule": "FREQ=DAILY",
+        "recurrence_id": "20240112",
+    }

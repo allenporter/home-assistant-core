@@ -69,7 +69,12 @@ class MockTodoListEntity(TodoListEntity):
         """Add an item to the To-do list."""
         self._attr_todo_items.append(item)
 
-    async def async_delete_todo_items(self, uids: list[str]) -> None:
+    async def async_delete_todo_items(
+        self,
+        uids: list[str],
+        recurrence_id: str | None = None,
+        recurrence_range: str | None = None,
+    ) -> None:
         """Delete an item in the To-do list."""
         self._attr_todo_items = [item for item in self.items if item.uid not in uids]
 
@@ -356,6 +361,11 @@ async def test_add_item_service_raises(
             "does not support setting field 'due_date'",
         ),
         (
+            {"item": "Submit forms", "rrule": "FREQ=DAILY"},
+            ServiceValidationError,
+            "does not support setting field 'rrule'",
+        ),
+        (
             {
                 "item": "Submit forms",
                 "due_datetime": f"2023-11-17T17:00:00{TEST_OFFSET}",
@@ -432,6 +442,15 @@ async def test_add_item_service_invalid_input(
                 summary="New item",
                 status=TodoItemStatus.NEEDS_ACTION,
                 description="Submit revised draft",
+            ),
+        ),
+        (
+            TodoListEntityFeature.SET_RRULE_ON_ITEM,
+            {"item": "New item", "rrule": "FREQ=DAILY"},
+            TodoItem(
+                summary="New item",
+                status=TodoItemStatus.NEEDS_ACTION,
+                rrule="FREQ=DAILY",
             ),
         ),
     ),
@@ -1265,15 +1284,11 @@ async def test_subscribe(
                 "summary": "Item #1",
                 "uid": "1",
                 "status": "needs_action",
-                "due": None,
-                "description": None,
             },
             {
                 "summary": "Item #2",
                 "uid": "2",
                 "status": "completed",
-                "due": None,
-                "description": None,
             },
         ]
     }
@@ -1291,22 +1306,16 @@ async def test_subscribe(
                 "summary": "Item #1",
                 "uid": "1",
                 "status": "needs_action",
-                "due": None,
-                "description": None,
             },
             {
                 "summary": "Item #2",
                 "uid": "2",
                 "status": "completed",
-                "due": None,
-                "description": None,
             },
             {
                 "summary": "Item #3",
                 "uid": "3",
                 "status": "needs_action",
-                "due": None,
-                "description": None,
             },
         ]
     }
@@ -1354,6 +1363,11 @@ async def test_subscribe_entity_does_not_exist(
             {"due": f"2023-11-17T17:00:00{TEST_OFFSET}"},
         ),
         ({"description": "Some description"}, {"description": "Some description"}),
+        ({"rrule": "FREQ=DAILY"}, {"rrule": "FREQ=DAILY"}),
+        (
+            {"recurrence_id": "some-recurrence-id"},
+            {"recurrence_id": "some-recurrence-id"},
+        ),
     ],
 )
 async def test_list_todo_items_extended_fields(
@@ -1407,3 +1421,34 @@ async def test_list_todo_items_extended_fields(
             ]
         }
     }
+
+
+@pytest.mark.parametrize(
+    ("rrule", "expected_error"),
+    [
+        ("FREQ=SECONDLY", "Invalid frequency for rule: FREQ=SECONDLY"),
+        ("FREQ=MINUTELY", "Invalid frequency for rule: FREQ=MINUTELY"),
+        ("FREQ=HOURLY", "Invalid frequency for rule: FREQ=HOURLY"),
+        ("invalid", "Invalid rrule 'invalid'"),
+        ("", "Invalid rrule ''"),
+    ],
+)
+async def test_invalid_rrule(
+    hass: HomeAssistant,
+    test_entity: TodoListEntity,
+    rrule: str,
+    expected_error: str,
+) -> None:
+    """Test validation for rrules."""
+    test_entity._attr_supported_features |= TodoListEntityFeature.SET_RRULE_ON_ITEM
+
+    await create_mock_platform(hass, [test_entity])
+
+    with pytest.raises(vol.Invalid, match=expected_error):
+        await hass.services.async_call(
+            DOMAIN,
+            "add_item",
+            {"item": "New item", "rrule": rrule},
+            target={"entity_id": "todo.entity1"},
+            blocking=True,
+        )
