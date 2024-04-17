@@ -305,6 +305,7 @@ FLOWS = {
         "lutron_caseta",
         "lyric",
         "mailgun",
+        "manual",
         "matter",
         "meater",
         "medcom_ble",

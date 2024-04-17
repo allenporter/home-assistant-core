@@ -3424,9 +3424,8 @@
       "iot_class": "cloud_push"
     },
     "manual": {
-      "name": "Manual Alarm Control Panel",
       "integration_type": "hub",
-      "config_flow": false,
+      "config_flow": true,
       "iot_class": "calculated"
     },
     "marantz": {
@@ -7204,6 +7203,7 @@
     "local_calendar",
     "local_ip",
     "local_todo",
+    "manual",
     "min_max",
     "mobile_app",
     "moehlenhoff_alpha2",

@@ -1,0 +1,37 @@
+{
+  "title": "Manual Alarm",
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "name": "[%key:common::config_flow::data::name%]",
+          "code": "Code",
+          "code_arm_required": "Code required to Arm or Disarm",
+          "delay_time": "Delay seconds",
+          "arming_time": "Arming seconds",
+          "trigger_time": "Trigger seconds",
+          "disarm_after_trigger": "Disarm after trigger"
+        },
+        "data_description": {
+          "name": "The name of the alarm",
+          "code": "An optional code needed to enable or disable the alarm. This can be either a number or a string.",
+          "code_arm_required": "If set, the code is required to arm and the alarm. If not set, the code is required to disarm the alarm",
+          "delay_time": "The time in seconds to delay before triggering the alarm. This gives you time to enter the code before the alarm triggers.",
+          "arming_time": "The time in seconds of the delay before arming the alarm. This gives you extra time to leave when arming the alarm.",
+          "trigger_time": "The time in seconds that the alarm fires when triggered.",
+          "disarm_after_trigger": "Determines the behavior of the alarm after triggering. The alrm will either stay armed or disarm."
+        },
+        "description": "Configure an alarm system in Home Assistant that can be used with automations.",
+        "title": "Manual Alarm Configuration"
+      }
+    }
+  },
+  "selector": {
+    "code_arm_required": {
+      "options": {
+        "disarm_only": "Disarm Only",
+        "arm_and_disarm": "Arm and Disarm"
+      }
+    }
+  }
+}

@@ -1,13 +1,14 @@
 """The tests for the manual Alarm Control Panel component."""
 
 from datetime import timedelta
-from unittest.mock import MagicMock, patch
+from typing import Any
+from unittest.mock import patch
 
 from freezegun import freeze_time
 import pytest
 
 from homeassistant.components import alarm_control_panel
-from homeassistant.components.demo import alarm_control_panel as demo
+from homeassistant.components.manual import DOMAIN
 from homeassistant.const import (
     ATTR_CODE,
     ATTR_ENTITY_ID,
@@ -31,18 +32,72 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.setup import async_setup_component
 import homeassistant.util.dt as dt_util
 
-from tests.common import async_fire_time_changed, mock_component, mock_restore_cache
+from tests.common import (
+    MockConfigEntry,
+    async_fire_time_changed,
+    mock_component,
+    mock_restore_cache,
+)
 from tests.components.alarm_control_panel import common
 
 CODE = "HELLO_CODE"
 
 
-async def test_setup_demo_platform(hass: HomeAssistant) -> None:
-    """Test setup."""
-    mock = MagicMock()
-    add_entities = mock.MagicMock()
-    await demo.async_setup_entry(hass, {}, add_entities)
-    assert add_entities.call_count == 1
+@pytest.fixture(name="config")
+async def mock_config() -> dict[str, Any] | None:
+    """Fixture to configure the integration using a ConfigEntry."""
+    return None
+
+
+@pytest.fixture(name="use_config_entry")
+async def mock_use_config_entry() -> bool:
+    """Fixture to configure the integration using a ConfigEntry."""
+    return False
+
+
+@pytest.fixture(name="setup_config_entry")
+async def mock_setup_config_entry(
+    hass: HomeAssistant, use_config_entry: bool, config: dict[str, Any]
+) -> MockConfigEntry | None:
+    """Fixture to setup a config entry."""
+    if not use_config_entry:
+        return None
+    config_entry = MockConfigEntry(
+        domain=DOMAIN,
+        data=config,
+    )
+    config_entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    return config_entry
+
+
+@pytest.fixture(name="setup_platform")
+async def mock_setup_platform(
+    hass: HomeAssistant, use_config_entry: bool, config: dict[str, Any]
+) -> None:
+    """Fixture to setup a config entry."""
+    if use_config_entry:
+        return
+    assert await async_setup_component(
+        hass,
+        alarm_control_panel.DOMAIN,
+        {
+            "alarm_control_panel": {
+                "platform": "manual",
+                **config,
+            }
+        },
+    )
+    await hass.async_block_till_done()
+
+
+@pytest.fixture(name="setup_integration")
+async def mock_setup_integration(setup_config_entry: Any, setup_platform: Any) -> None:
+    """Fixture to configure the integration based on `use_config_entry`."""
+    return
 
 
 @pytest.mark.parametrize(
@@ -55,22 +110,28 @@ async def test_setup_demo_platform(hass: HomeAssistant) -> None:
         (SERVICE_ALARM_ARM_VACATION, STATE_ALARM_ARMED_VACATION),
     ],
 )
-async def test_no_pending(hass: HomeAssistant, service, expected_state) -> None:
-    """Test no pending after arming."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "arming_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "arming_time": 0,
+            "delay_time": 30,
+            "trigger_time": 30,
+            "code_arm_required": True,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_no_pending(
+    hass: HomeAssistant,
+    setup_integration: Any,
+    service: str,
+    expected_state: str,
+) -> None:
+    """Test no pending after arming."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -96,25 +157,26 @@ async def test_no_pending(hass: HomeAssistant, service, expected_state) -> None:
         (SERVICE_ALARM_ARM_VACATION, STATE_ALARM_ARMED_VACATION),
     ],
 )
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "code": CODE,
+            "code_arm_required": False,
+            "arming_time": 0,
+            "disarm_after_trigger": False,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
 async def test_no_pending_when_code_not_req(
-    hass: HomeAssistant, service, expected_state
+    hass: HomeAssistant,
+    setup_integration: Any,
+    service: str,
+    expected_state: str,
 ) -> None:
     """Test no pending when code not required."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "code_arm_required": False,
-                "arming_time": 0,
-                "disarm_after_trigger": False,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -140,22 +202,22 @@ async def test_no_pending_when_code_not_req(
         (SERVICE_ALARM_ARM_VACATION, STATE_ALARM_ARMED_VACATION),
     ],
 )
-async def test_with_pending(hass: HomeAssistant, service, expected_state) -> None:
-    """Test with pending after arming."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "arming_time": 1,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "arming_time": 1,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_with_pending(
+    hass: HomeAssistant, setup_integration: Any, service: str, expected_state: str
+) -> None:
+    """Test with pending after arming."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -205,22 +267,22 @@ async def test_with_pending(hass: HomeAssistant, service, expected_state) -> Non
         (SERVICE_ALARM_ARM_VACATION, STATE_ALARM_ARMED_VACATION),
     ],
 )
-async def test_with_invalid_code(hass: HomeAssistant, service, expected_state) -> None:
-    """Attempt to arm without a valid code."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "arming_time": 1,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "arming_time": 1,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_with_invalid_code(
+    hass: HomeAssistant, setup_integration: Any, service: str, expected_state: str
+) -> None:
+    """Attempt to arm without a valid code."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -250,22 +312,22 @@ async def test_with_invalid_code(hass: HomeAssistant, service, expected_state) -
         (SERVICE_ALARM_ARM_VACATION, STATE_ALARM_ARMED_VACATION),
     ],
 )
-async def test_with_template_code(hass: HomeAssistant, service, expected_state) -> None:
-    """Attempt to arm with a template-based code."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code_template": '{{ "abc" }}',
-                "arming_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code_template": '{{ "abc" }}',
+            "arming_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_with_template_code(
+    hass: HomeAssistant, setup_integration: Any, service: str, expected_state: str
+) -> None:
+    """Attempt to arm with a template-based code."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -282,6 +344,7 @@ async def test_with_template_code(hass: HomeAssistant, service, expected_state) 
     assert state.state == expected_state
 
 
+# This test is only exercised using yaml
 @pytest.mark.parametrize(
     ("service", "expected_state"),
     [
@@ -332,21 +395,19 @@ async def test_with_specific_pending(
     assert hass.states.get(entity_id).state == expected_state
 
 
-async def test_trigger_no_pending(hass: HomeAssistant) -> None:
-    """Test triggering when no pending submitted method."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 1,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "trigger_time": 1,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_no_pending(hass: HomeAssistant, setup_integration: Any) -> None:
+    """Test triggering when no pending submitted method."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -369,23 +430,21 @@ async def test_trigger_no_pending(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_TRIGGERED
 
 
-async def test_trigger_with_delay(hass: HomeAssistant) -> None:
-    """Test trigger method and switch from pending to triggered."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "delay_time": 1,
-                "arming_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "delay_time": 1,
+            "arming_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_delay(hass: HomeAssistant, setup_integration: Any) -> None:
+    """Test trigger method and switch from pending to triggered."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -414,22 +473,22 @@ async def test_trigger_with_delay(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_TRIGGERED
 
 
-async def test_trigger_zero_trigger_time(hass: HomeAssistant) -> None:
-    """Test disabled trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "arming_time": 0,
-                "trigger_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "arming_time": 0,
+            "trigger_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_zero_trigger_time(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disabled trigger."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -440,22 +499,22 @@ async def test_trigger_zero_trigger_time(hass: HomeAssistant) -> None:
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_zero_trigger_time_with_pending(hass: HomeAssistant) -> None:
-    """Test disabled trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "arming_time": 2,
-                "trigger_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "arming_time": 2,
+            "trigger_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_zero_trigger_time_with_pending(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disabled trigger."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -466,22 +525,22 @@ async def test_trigger_zero_trigger_time_with_pending(hass: HomeAssistant) -> No
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_pending(hass: HomeAssistant) -> None:
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "delay_time": 2,
+            "trigger_time": 3,
+            "disarm_after_trigger": False,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_pending(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
     """Test arm home method."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "delay_time": 2,
-                "trigger_time": 3,
-                "disarm_after_trigger": False,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -518,24 +577,24 @@ async def test_trigger_with_pending(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_unused_specific_delay(hass: HomeAssistant) -> None:
-    """Test trigger method and switch from pending to triggered."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "delay_time": 5,
-                "arming_time": 0,
-                "armed_home": {"delay_time": 10},
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "delay_time": 5,
+            "arming_time": 0,
+            "armed_home": {"delay_time": 10},
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_unused_specific_delay(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test trigger method and switch from pending to triggered."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -564,24 +623,24 @@ async def test_trigger_with_unused_specific_delay(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_TRIGGERED
 
 
-async def test_trigger_with_specific_delay(hass: HomeAssistant) -> None:
-    """Test trigger method and switch from pending to triggered."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "delay_time": 10,
-                "arming_time": 0,
-                "armed_away": {"delay_time": 1},
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "delay_time": 10,
+            "arming_time": 0,
+            "armed_away": {"delay_time": 1},
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_specific_delay(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test trigger method and switch from pending to triggered."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -610,81 +669,23 @@ async def test_trigger_with_specific_delay(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_TRIGGERED
 
 
-async def test_trigger_with_pending_and_delay(hass: HomeAssistant) -> None:
-    """Test trigger method and switch from pending to triggered."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "delay_time": 2,
-                "arming_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "delay_time": 2,
+            "arming_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
-
-    entity_id = "alarm_control_panel.test"
-
-    assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
-
-    await common.async_alarm_arm_away(hass, CODE)
-
-    assert hass.states.get(entity_id).state == STATE_ALARM_ARMED_AWAY
-
-    await common.async_alarm_trigger(hass, entity_id=entity_id)
-
-    state = hass.states.get(entity_id)
-    assert state.state == STATE_ALARM_PENDING
-    assert state.attributes["next_state"] == STATE_ALARM_TRIGGERED
-
-    future = dt_util.utcnow() + timedelta(seconds=1)
-    with patch(
-        "homeassistant.components.manual.alarm_control_panel.dt_util.utcnow",
-        return_value=future,
-    ):
-        async_fire_time_changed(hass, future)
-        await hass.async_block_till_done()
-
-    state = hass.states.get(entity_id)
-    assert state.state == STATE_ALARM_PENDING
-    assert state.attributes["next_state"] == STATE_ALARM_TRIGGERED
-
-    future += timedelta(seconds=1)
-    with patch(
-        "homeassistant.components.manual.alarm_control_panel.dt_util.utcnow",
-        return_value=future,
-    ):
-        async_fire_time_changed(hass, future)
-        await hass.async_block_till_done()
-
-    state = hass.states.get(entity_id)
-    assert state.attributes["previous_state"] == STATE_ALARM_ARMED_AWAY
-    assert state.state == STATE_ALARM_TRIGGERED
-
-
-async def test_trigger_with_pending_and_specific_delay(hass: HomeAssistant) -> None:
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_pending_and_delay(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
     """Test trigger method and switch from pending to triggered."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "delay_time": 10,
-                "arming_time": 0,
-                "armed_away": {"delay_time": 2},
-                "disarm_after_trigger": False,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -725,23 +726,81 @@ async def test_trigger_with_pending_and_specific_delay(hass: HomeAssistant) -> N
     assert state.state == STATE_ALARM_TRIGGERED
 
 
-async def test_trigger_with_specific_pending(hass: HomeAssistant) -> None:
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "code": CODE,
+            "delay_time": 10,
+            "arming_time": 0,
+            "armed_away": {"delay_time": 2},
+            "disarm_after_trigger": False,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_pending_and_specific_delay(
+    hass: HomeAssistant, setup_integration: None
+) -> None:
+    """Test trigger method and switch from pending to triggered."""
+
+    entity_id = "alarm_control_panel.test"
+
+    assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
+
+    await common.async_alarm_arm_away(hass, CODE)
+
+    assert hass.states.get(entity_id).state == STATE_ALARM_ARMED_AWAY
+
+    await common.async_alarm_trigger(hass, entity_id=entity_id)
+
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_ALARM_PENDING
+    assert state.attributes["next_state"] == STATE_ALARM_TRIGGERED
+
+    future = dt_util.utcnow() + timedelta(seconds=1)
+    with patch(
+        "homeassistant.components.manual.alarm_control_panel.dt_util.utcnow",
+        return_value=future,
+    ):
+        async_fire_time_changed(hass, future)
+        await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.state == STATE_ALARM_PENDING
+    assert state.attributes["next_state"] == STATE_ALARM_TRIGGERED
+
+    future += timedelta(seconds=1)
+    with patch(
+        "homeassistant.components.manual.alarm_control_panel.dt_util.utcnow",
+        return_value=future,
+    ):
+        async_fire_time_changed(hass, future)
+        await hass.async_block_till_done()
+
+    state = hass.states.get(entity_id)
+    assert state.attributes["previous_state"] == STATE_ALARM_ARMED_AWAY
+    assert state.state == STATE_ALARM_TRIGGERED
+
+
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "delay_time": 10,
+            "disarmed": {"delay_time": 2},
+            "trigger_time": 3,
+            "disarm_after_trigger": False,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_specific_pending(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
     """Test arm home method."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "delay_time": 10,
-                "disarmed": {"delay_time": 2},
-                "trigger_time": 3,
-                "disarm_after_trigger": False,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -772,22 +831,22 @@ async def test_trigger_with_specific_pending(hass: HomeAssistant) -> None:
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_disarm_after_trigger(hass: HomeAssistant) -> None:
-    """Test disarm after trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "delay_time": 0,
-                "disarm_after_trigger": True,
-            }
+            "name": "test",
+            "trigger_time": 5,
+            "delay_time": 0,
+            "disarm_after_trigger": True,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_disarm_after_trigger(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disarm after trigger."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -810,23 +869,23 @@ async def test_trigger_with_disarm_after_trigger(hass: HomeAssistant) -> None:
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_zero_specific_trigger_time(hass: HomeAssistant) -> None:
-    """Test trigger method."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "disarmed": {"trigger_time": 0},
-                "arming_time": 0,
-                "disarm_after_trigger": True,
-            }
+            "name": "test",
+            "trigger_time": 5,
+            "disarmed": {"trigger_time": 0},
+            "arming_time": 0,
+            "disarm_after_trigger": True,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_zero_specific_trigger_time(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test trigger method."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -837,25 +896,24 @@ async def test_trigger_with_zero_specific_trigger_time(hass: HomeAssistant) -> N
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "trigger_time": 5,
+            "armed_home": {"trigger_time": 0},
+            "delay_time": 0,
+            "disarm_after_trigger": True,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
 async def test_trigger_with_unused_zero_specific_trigger_time(
     hass: HomeAssistant,
+    setup_integration: Any,
 ) -> None:
     """Test disarm after trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "armed_home": {"trigger_time": 0},
-                "delay_time": 0,
-                "disarm_after_trigger": True,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -878,22 +936,22 @@ async def test_trigger_with_unused_zero_specific_trigger_time(
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_specific_trigger_time(hass: HomeAssistant) -> None:
-    """Test disarm after trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "disarmed": {"trigger_time": 5},
-                "delay_time": 0,
-                "disarm_after_trigger": True,
-            }
+            "name": "test",
+            "disarmed": {"trigger_time": 5},
+            "delay_time": 0,
+            "disarm_after_trigger": True,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_specific_trigger_time(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disarm after trigger."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -916,23 +974,23 @@ async def test_trigger_with_specific_trigger_time(hass: HomeAssistant) -> None:
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_trigger_with_no_disarm_after_trigger(hass: HomeAssistant) -> None:
-    """Test disarm after trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "arming_time": 0,
-                "delay_time": 0,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "trigger_time": 5,
+            "arming_time": 0,
+            "delay_time": 0,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_trigger_with_no_disarm_after_trigger(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disarm after trigger."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -959,25 +1017,24 @@ async def test_trigger_with_no_disarm_after_trigger(hass: HomeAssistant) -> None
     assert hass.states.get(entity_id).state == STATE_ALARM_ARMED_AWAY
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        {
+            "name": "test",
+            "trigger_time": 5,
+            "arming_time": 0,
+            "delay_time": 0,
+            "disarm_after_trigger": False,
+        },
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
 async def test_back_to_back_trigger_with_no_disarm_after_trigger(
     hass: HomeAssistant,
+    setup_integration: Any,
 ) -> None:
     """Test disarm after trigger."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
-        {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "arming_time": 0,
-                "delay_time": 0,
-                "disarm_after_trigger": False,
-            }
-        },
-    )
-    await hass.async_block_till_done()
 
     entity_id = "alarm_control_panel.test"
 
@@ -1020,21 +1077,21 @@ async def test_back_to_back_trigger_with_no_disarm_after_trigger(
     assert hass.states.get(entity_id).state == STATE_ALARM_ARMED_AWAY
 
 
-async def test_disarm_while_pending_trigger(hass: HomeAssistant) -> None:
-    """Test disarming while pending state."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "trigger_time": 5,
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "trigger_time": 5,
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_disarm_while_pending_trigger(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disarming while pending state."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -1059,22 +1116,22 @@ async def test_disarm_while_pending_trigger(hass: HomeAssistant) -> None:
     assert hass.states.get(entity_id).state == STATE_ALARM_DISARMED
 
 
-async def test_disarm_during_trigger_with_invalid_code(hass: HomeAssistant) -> None:
-    """Test disarming while code is invalid."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "delay_time": 5,
-                "code": "12345",
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "delay_time": 5,
+            "code": "12345",
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_disarm_during_trigger_with_invalid_code(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test disarming while code is invalid."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -1106,6 +1163,7 @@ async def test_disarm_during_trigger_with_invalid_code(hass: HomeAssistant) -> N
     assert state.state == STATE_ALARM_TRIGGERED
 
 
+# This exercises templates only available in yaml
 async def test_disarm_with_template_code(hass: HomeAssistant) -> None:
     """Attempt to disarm with a valid or invalid template-based code."""
     assert await async_setup_component(
@@ -1144,25 +1202,25 @@ async def test_disarm_with_template_code(hass: HomeAssistant) -> None:
     assert state.state == STATE_ALARM_DISARMED
 
 
-async def test_arm_away_after_disabled_disarmed(hass: HomeAssistant) -> None:
-    """Test pending state with and without zero trigger time."""
-    assert await async_setup_component(
-        hass,
-        alarm_control_panel.DOMAIN,
+@pytest.mark.parametrize(
+    "config",
+    [
         {
-            "alarm_control_panel": {
-                "platform": "manual",
-                "name": "test",
-                "code": CODE,
-                "arming_time": 0,
-                "delay_time": 1,
-                "armed_away": {"arming_time": 1},
-                "disarmed": {"trigger_time": 0},
-                "disarm_after_trigger": False,
-            }
+            "name": "test",
+            "code": CODE,
+            "arming_time": 0,
+            "delay_time": 1,
+            "armed_away": {"arming_time": 1},
+            "disarmed": {"trigger_time": 0},
+            "disarm_after_trigger": False,
         },
-    )
-    await hass.async_block_till_done()
+    ],
+)
+@pytest.mark.parametrize("use_config_entry", [True, False])
+async def test_arm_away_after_disabled_disarmed(
+    hass: HomeAssistant, setup_integration: Any
+) -> None:
+    """Test pending state with and without zero trigger time."""
 
     entity_id = "alarm_control_panel.test"
 
@@ -1218,7 +1276,7 @@ async def test_arm_away_after_disabled_disarmed(hass: HomeAssistant) -> None:
         (STATE_ALARM_DISARMED),
     ],
 )
-async def test_restore_state(hass: HomeAssistant, expected_state) -> None:
+async def test_restore_state(hass: HomeAssistant, expected_state: str) -> None:
     """Ensure state is restored on startup."""
     mock_restore_cache(hass, (State("alarm_control_panel.test", expected_state),))
 
