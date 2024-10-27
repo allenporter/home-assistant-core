@@ -6,10 +6,14 @@ import asyncio
 from collections.abc import Callable
 import datetime
 import functools
+import io
 import logging
 from pathlib import Path
 from typing import cast
 
+from aiortc import RTCPeerConnection, RTCSessionDescription
+from aiortc.mediastreams import VideoStreamTrack
+import av
 from google_nest_sdm.camera_traits import (
     CameraImageTrait,
     CameraLiveStreamTrait,
@@ -19,6 +23,8 @@ from google_nest_sdm.camera_traits import (
 from google_nest_sdm.device import Device
 from google_nest_sdm.device_manager import DeviceManager
 from google_nest_sdm.exceptions import ApiException
+import numpy as np
+from PIL import Image
 
 from homeassistant.components.camera import (
     Camera,
@@ -59,6 +65,41 @@ async def async_setup_entry(
         if CameraImageTrait.NAME in device.traits
         or CameraLiveStreamTrait.NAME in device.traits
     )
+
+
+def nest_frame_to_image_bytes(frame: av.VideoFrame, format: str = "PNG") -> bytes:
+    """Convert a Nest camera yuv420p VideoFrame to PNG or JPEG bytes."""
+    # Use PyAV's built-in conversion and reshape based on frame dimensions and RGB channels
+    rgb_frame = frame.reformat(format="rgb24")
+    rgb_array = np.asarray(rgb_frame.planes[0])
+    rgb_array = rgb_array.reshape(frame.height, frame.width, 3)
+    # Convert to bytes
+    pil_image = Image.fromarray(rgb_array)
+    img_byte_arr = io.BytesIO()
+    pil_image.save(img_byte_arr, format=format)
+    return img_byte_arr.getvalue()
+
+
+class ThumbnailTrackListener:
+    """Captures a single frame and saves as a thumbnail."""
+
+    def __init__(self) -> None:
+        """Initialize the TrackListener."""
+        self.track: VideoStreamTrack | None = None
+        self.event = asyncio.Event()
+
+    def set_track(self, track: VideoStreamTrack) -> None:
+        """Handle the track event."""
+        _LOGGER.debug("Track received: %s", track.kind)
+        if track.kind != "video":
+            return
+        self.track = track
+        self.event.set()
+
+    async def recv(self) -> av.VideoFrame:
+        """Receive the next frame from the track."""
+        await self.event.wait()
+        return await cast(VideoStreamTrack, self.track).recv()
 
 
 class NestCamera(Camera):
@@ -195,9 +236,49 @@ class NestCamera(Camera):
         self, width: int | None = None, height: int | None = None
     ) -> bytes | None:
         """Return bytes of camera image."""
-        # Use the thumbnail from RTSP stream, or a placeholder if stream is
-        # not supported (e.g. WebRTC) as a fallback when 'use_stream_for_stills' if False
-        return await self.hass.async_add_executor_job(self.placeholder_image)
+        # This will only be invoked for WebRTC streams since it will use
+        # a thumbnail from RTSP when 'use_stream_for_stills' is True.
+        # Otherwise, create a local WebRTC client and make a one-time connection
+        # to grab a frame and hang up.
+
+        pc = RTCPeerConnection()
+
+        # Nest expects data, audio, video though we only need a video channel
+        pc.createDataChannel("data")
+        pc.addTransceiver("audio", "recvonly")
+        pc.addTransceiver("video", "recvonly")
+        thumbnail_track = ThumbnailTrackListener()
+        pc.on("track", thumbnail_track.set_track)
+
+        offer = await pc.createOffer()
+        await pc.setLocalDescription(offer)
+
+        # Send offer to Nest API
+        answer = await self.async_handle_web_rtc_offer(pc.localDescription.sdp)
+        if not answer:
+            raise HomeAssistantError("Failed to create webrtc offer")
+
+        # HACK: Move this into nest library. This fixes nest answers to have
+        # valid candidate foundation values for compatibility with aiortc.
+        lines = []
+        n = 0
+        for line in answer.split("\r\n"):
+            if not line.startswith("a=candidate: "):
+                continue
+            lines.append("a=candidate:{n} " + line[12:])
+            n += 1
+        answer = "\r\n".join(lines)
+
+        await pc.setRemoteDescription(
+            RTCSessionDescription(
+                sdp=answer,
+                type="answer",
+            )
+        )
+        frame = await thumbnail_track.recv()
+        await pc.close()
+
+        return nest_frame_to_image_bytes(frame)
 
     @classmethod
     @functools.cache
