@@ -5,11 +5,9 @@ from collections.abc import Callable
 import logging
 from typing import Any, cast
 
-from fitbit import Fitbit
-from fitbit.exceptions import HTTPException, HTTPUnauthorized
-from requests.exceptions import ConnectionError as RequestsConnectionError
+import fitbit_web_api
+from fitbit_web_api.rest import ApiException
 
-from homeassistant.const import CONF_ACCESS_TOKEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.util.unit_system import METRIC_SYSTEM
@@ -45,24 +43,22 @@ class FitbitApi(ABC):
     async def async_get_access_token(self) -> dict[str, Any]:
         """Return a valid token dictionary for the Fitbit API."""
 
-    async def _async_get_client(self) -> Fitbit:
+    async def _async_get_client(self) -> fitbit_web_api.ApiClient:
         """Get synchronous client library, called before each client request."""
         # Always rely on Home Assistant's token update mechanism which refreshes
         # the data in the configuration entry.
         token = await self.async_get_access_token()
-        return Fitbit(
-            client_id=None,
-            client_secret=None,
-            access_token=token[CONF_ACCESS_TOKEN],
-            refresh_token=token[CONF_REFRESH_TOKEN],
-            expires_at=float(token[CONF_EXPIRES_AT]),
-        )
+
+        configuration = fitbit_web_api.Configuration()
+        configuration.access_token = token
+        return fitbit_web_api.ApiClient(configuration)
 
     async def async_get_user_profile(self) -> FitbitProfile:
         """Return the user profile from the API."""
         if self._profile is None:
             client = await self._async_get_client()
-            response: dict[str, Any] = await self._run(client.user_profile_get)
+            api_instance = fitbit_web_api.UserApi(client)
+            response: dict[str, Any] = await self._run(api_instance.get_profile)
             _LOGGER.debug("user_profile_get=%s", response)
             profile = response["user"]
             self._profile = FitbitProfile(
@@ -97,7 +93,8 @@ class FitbitApi(ABC):
     async def async_get_devices(self) -> list[FitbitDevice]:
         """Return available devices."""
         client = await self._async_get_client()
-        devices: list[dict[str, str]] = await self._run(client.get_devices)
+        api_instance = fitbit_web_api.DevicesApi(client)
+        devices: list[dict[str, str]] = await self._run(api_instance.get_devices)
         _LOGGER.debug("get_devices=%s", devices)
         return [
             FitbitDevice(
@@ -113,12 +110,18 @@ class FitbitApi(ABC):
     async def async_get_latest_time_series(self, resource_type: str) -> dict[str, Any]:
         """Return the most recent value from the time series for the specified resource type."""
         client = await self._async_get_client()
+        api_instance = fitbit_web_api.ActivityTimeSeriesApi(client)
 
         # Set request header based on the configured unit system
         client.system = await self.async_get_unit_system()
 
         def _time_series() -> dict[str, Any]:
-            return cast(dict[str, Any], client.time_series(resource_type, period="7d"))
+            return cast(
+                dict[str, Any],
+                api_instance.get_activities_resource_by_date_period(
+                    resource_type, "today", "7d"
+                ),
+            )
 
         response: dict[str, Any] = await self._run(_time_series)
         _LOGGER.debug("time_series(%s)=%s", resource_type, response)
@@ -130,15 +133,13 @@ class FitbitApi(ABC):
         """Run client command."""
         try:
             return await self._hass.async_add_executor_job(func)
-        except RequestsConnectionError as err:
+        except ApiException as err:
             _LOGGER.debug("Connection error to fitbit API: %s", err)
+            if err.status == 401:
+                raise FitbitAuthException(
+                    "Authentication error from fitbit API"
+                ) from err
             raise FitbitApiException("Connection error to fitbit API") from err
-        except HTTPUnauthorized as err:
-            _LOGGER.debug("Unauthorized error from fitbit API: %s", err)
-            raise FitbitAuthException("Authentication error from fitbit API") from err
-        except HTTPException as err:
-            _LOGGER.debug("Error from fitbit API: %s", err)
-            raise FitbitApiException("Error from fitbit API") from err
 
 
 class OAuthFitbitApi(FitbitApi):
