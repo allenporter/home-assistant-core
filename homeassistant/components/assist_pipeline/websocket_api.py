@@ -10,7 +10,11 @@ import contextlib
 import logging
 import math
 from typing import Any, Final
+import uuid
 
+from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from av.frame import Frame
+from av.packet import Packet
 import voluptuous as vol
 
 from homeassistant.components import conversation, stt, tts, websocket_api
@@ -55,6 +59,7 @@ MAX_CAPTURE_TIMEOUT: Final = 60.0
 def async_register_websocket_api(hass: HomeAssistant) -> None:
     """Register the websocket API."""
     websocket_api.async_register_command(hass, websocket_run)
+    websocket_api.async_register_command(hass, websocket_run_webrtc)
     websocket_api.async_register_command(hass, websocket_list_languages)
     websocket_api.async_register_command(hass, websocket_list_runs)
     websocket_api.async_register_command(hass, websocket_list_devices)
@@ -228,6 +233,285 @@ async def websocket_run(
         start_stage=start_stage,
         end_stage=end_stage,
         event_callback=lambda event: connection.send_event(msg["id"], event),
+        runner_data={
+            "stt_binary_handler_id": handler_id,
+            "timeout": timeout,
+        },
+        wake_word_settings=wake_word_settings,
+        audio_settings=audio_settings or AudioSettings(),
+    )
+
+    pipeline_input = PipelineInput(**input_args)
+
+    try:
+        await pipeline_input.validate()
+    except PipelineError as error:
+        # Report more specific error when possible
+        connection.send_error(msg["id"], error.code, error.message)
+        return
+
+    # Confirm subscription
+    connection.send_result(msg["id"])
+
+    run_task = hass.async_create_task(pipeline_input.execute())
+
+    # Cancel pipeline if user unsubscribes
+    connection.subscriptions[msg["id"]] = run_task.cancel
+
+    try:
+        # Task contains a timeout
+        async with asyncio.timeout(timeout):
+            await run_task
+    except TimeoutError:
+        pipeline_input.run.process_event(
+            PipelineEvent(
+                PipelineEventType.ERROR,
+                {"code": "timeout", "message": "Timeout running pipeline"},
+            )
+        )
+    finally:
+        if unregister_handler is not None:
+            # Unregister binary handler
+            unregister_handler()
+
+
+SESSIONS = []
+
+
+@websocket_api.websocket_command(
+    vol.All(
+        websocket_api.BASE_COMMAND_MESSAGE_SCHEMA.extend(
+            {
+                vol.Required("type"): "assist_pipeline/run_webrtc",
+                vol.Required("offer_sdp"): str,
+            },
+        ),
+    ),
+)
+@websocket_api.async_response
+async def websocket_run_webrtc(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Run a pipeline."""
+    pipeline_id = msg.get("pipeline")
+    try:
+        pipeline = async_get_pipeline(hass, pipeline_id=pipeline_id)
+    except PipelineNotFound:
+        connection.send_error(
+            msg["id"],
+            "pipeline-not-found",
+            f"Pipeline not found: id={pipeline_id}",
+        )
+        return
+
+    session = WebRtcRealtimeSession(hass)
+    try:
+        async with asyncio.timeout(10):
+            answer = await session.start_session(msg["offer_sdp"])
+    except TimeoutError:
+        connection.send_error(msg["id"], "failed", "Timeout starting WebRTC session")
+        await session.close()
+        return
+    except WebRtcException as e:  # XXX
+        connection.send_error(msg["id"], "failed", str(e))
+        await session.close()
+        return
+    _LOGGER.info("WebRTC session started")
+    connection.send_result(msg["id"], answer.sdp)
+    _LOGGER.info("WebRTC answer sent")
+    SESSIONS.append(session)
+
+
+class WebRtcException(Exception):
+    """WebRTC Exception."""
+
+
+class WebRtcRealtimeSession:
+    """WebRTC Realtime Session."""
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        """Initialize WebRTC Realtime Session."""
+        self.hass = hass
+        self.pc = RTCPeerConnection()
+        self.pc_id = f"PeerConnection({uuid.uuid4()})"
+        self.datachannel = None
+        self.pc.on("datachannel", self.on_datachannel)
+        self.pc.on("connectionstatechange", self.on_connectionstatechange)
+        self.pc.on("track", self.on_track)
+        self.connect_event = asyncio.Event()
+        self.error = None
+
+    async def close(self) -> None:
+        """Close WebRTC session."""
+        await self.pc.close()
+
+    def _log_info(self, msg: str, *args: Any) -> None:
+        """Log info."""
+        _LOGGER.info(f"{self.pc_id} {msg}", *args)
+
+    async def start_session(self, offer_sdp: str) -> Any:
+        """Start a WebRTC pipeline session and return an answer."""
+        self._log_info("Starting WebRTC session")
+        offer = RTCSessionDescription(sdp=offer_sdp, type="offer")
+
+        # handle offer
+        await self.pc.setRemoteDescription(offer)
+
+        # send answer
+        answer = await self.pc.createAnswer()
+        self._log_info("Created answer")
+        await self.pc.setLocalDescription(answer)
+        if self.error:
+            raise self.error
+        self._log_info("Answer set")
+        return self.pc.localDescription
+
+    def send_pipeline_event(self, event) -> None:
+        """Send a pipeline event through the WebRTC data channel."""
+        self._log_info("Sending event %s to client", event)
+        self.datachannel.send(event)
+
+    def on_datachannel(self, channel):
+        self._log_info("Data channel %s opened", channel.label)
+        self.datachannel = channel
+
+        @channel.on("message")
+        def on_message(message):
+            self._log_info("Received client message: %s", message)
+            if isinstance(message, str) and message.startswith("ping"):
+                self._log_info("Responding to ping message")
+                channel.send("pong" + message[4:])
+
+    async def on_connectionstatechange(self):
+        self._log_info("Connection state is %s", self.pc.connectionState)
+        if self.pc.connectionState == "failed":
+            await self.pc.close()
+            self.error = WebRtcException("Connection failed")
+            self.connect_event.set()
+        elif self.pc.connectionState == "connecting":
+            self._log_info("Connection is connecting")
+        elif self.pc.connectionState == "connected":
+            self.connect_event.set()
+
+    def on_track(self, track):
+        self._log_info("Track %s received", track.kind)
+
+        class AudioTrack(MediaStreamTrack):
+            kind = "audio"
+
+            async def recv(self) -> Frame | Packet:
+                """Receive a frame or packet."""
+                _LOGGER.info("AudioTrack.recv")
+                # TODO: Inject packets
+                raise NotImplementedError
+
+        if track.kind == "audio":
+            audio_track = AudioTrack()
+            self.pc.addTrack(audio_track)
+            # recorder.addTrack(track)
+        # elif track.kind == "video":
+        #     self.pc.addTrack(
+        #         VideoTransformTrack(
+        #             relay.subscribe(track), transform=params["video_transform"]
+        #         )
+        #     )
+
+
+async def run_pipeline(
+    hass: HomeAssistant, session: WebRtcRealtimeSession, msg: dict[str, Any]
+):
+    timeout = msg.get("timeout", DEFAULT_PIPELINE_TIMEOUT)
+    start_stage = PipelineStage(msg["start_stage"])
+    end_stage = PipelineStage(msg["end_stage"])
+    handler_id: int | None = None
+    unregister_handler: Callable[[], None] | None = None
+    wake_word_settings: WakeWordSettings | None = None
+    audio_settings: AudioSettings | None = None
+
+    # Arguments to PipelineInput
+    input_args: dict[str, Any] = {
+        "conversation_id": msg.get("conversation_id"),
+        "device_id": msg.get("device_id"),
+    }
+
+    if start_stage in (PipelineStage.WAKE_WORD, PipelineStage.STT):
+        # Audio pipeline that will receive audio as binary websocket messages
+        msg_input = msg["input"]
+        audio_queue: asyncio.Queue[bytes] = asyncio.Queue()
+        incoming_sample_rate = msg_input["sample_rate"]
+        wake_word_phrase: str | None = None
+
+        if start_stage == PipelineStage.WAKE_WORD:
+            wake_word_settings = WakeWordSettings(
+                timeout=msg["input"].get("timeout", DEFAULT_WAKE_WORD_TIMEOUT),
+                audio_seconds_to_buffer=msg_input.get("audio_seconds_to_buffer", 0),
+            )
+        elif start_stage == PipelineStage.STT:
+            wake_word_phrase = msg["input"].get("wake_word_phrase")
+
+        async def stt_stream() -> AsyncGenerator[bytes]:
+            state = None
+
+            # Yield until we receive an empty chunk
+            while chunk := await audio_queue.get():
+                if incoming_sample_rate != SAMPLE_RATE:
+                    chunk, state = audioop.ratecv(
+                        chunk,
+                        SAMPLE_WIDTH,
+                        SAMPLE_CHANNELS,
+                        incoming_sample_rate,
+                        SAMPLE_RATE,
+                        state,
+                    )
+                yield chunk
+
+        def handle_binary(
+            _hass: HomeAssistant,
+            _connection: websocket_api.ActiveConnection,
+            data: bytes,
+        ) -> None:
+            # Forward to STT audio stream
+            audio_queue.put_nowait(data)
+
+        handler_id, unregister_handler = connection.async_register_binary_handler(
+            handle_binary
+        )
+
+        # Audio input must be raw PCM at 16Khz with 16-bit mono samples
+        input_args["stt_metadata"] = stt.SpeechMetadata(
+            language=pipeline.stt_language or pipeline.language,
+            format=stt.AudioFormats.WAV,
+            codec=stt.AudioCodecs.PCM,
+            bit_rate=stt.AudioBitRates.BITRATE_16,
+            sample_rate=stt.AudioSampleRates.SAMPLERATE_16000,
+            channel=stt.AudioChannels.CHANNEL_MONO,
+        )
+        input_args["stt_stream"] = stt_stream()
+        input_args["wake_word_phrase"] = wake_word_phrase
+
+        # Audio settings
+        audio_settings = AudioSettings(
+            noise_suppression_level=msg_input.get("noise_suppression_level", 0),
+            auto_gain_dbfs=msg_input.get("auto_gain_dbfs", 0),
+            volume_multiplier=msg_input.get("volume_multiplier", 1.0),
+            is_vad_enabled=not msg_input.get("no_vad", False),
+        )
+    elif start_stage == PipelineStage.INTENT:
+        # Input to conversation agent
+        input_args["intent_input"] = msg["input"]["text"]
+    elif start_stage == PipelineStage.TTS:
+        # Input to text-to-speech system
+        input_args["tts_input"] = msg["input"]["text"]
+
+    input_args["run"] = PipelineRun(
+        hass,
+        context=connection.context(msg),
+        pipeline=pipeline,
+        start_stage=start_stage,
+        end_stage=end_stage,
+        event_callback=send_event,
         runner_data={
             "stt_binary_handler_id": handler_id,
             "timeout": timeout,
