@@ -11,6 +11,7 @@ from homeassistant.components import stt
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
+from . import webrtc
 from .const import (
     CONF_DEBUG_RECORDING_DIR,
     DATA_CONFIG,
@@ -88,6 +89,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     await async_setup_pipeline_store(hass)
     await async_run_migrations(hass)
     async_register_websocket_api(hass)
+    webrtc.async_register_websocket_api(hass)
 
     return True
 
