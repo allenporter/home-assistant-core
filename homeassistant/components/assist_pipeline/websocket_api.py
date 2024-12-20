@@ -72,7 +72,7 @@ def async_register_websocket_api(hass: HomeAssistant) -> None:
                 # pylint: disable-next=unnecessary-lambda
                 vol.Required("end_stage"): lambda val: PipelineStage(val),
                 vol.Optional("input"): dict,
-                vol.Optional("d"): str,
+                vol.Optional("pipeline"): str,
                 vol.Optional("conversation_id"): vol.Any(str, None),
                 vol.Optional("device_id"): vol.Any(str, None),
                 vol.Optional("timeout"): vol.Any(float, int),
