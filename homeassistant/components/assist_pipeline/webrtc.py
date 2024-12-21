@@ -3,19 +3,17 @@
 import asyncio
 
 # Suppressing disable=deprecated-module is needed for Python 3.11
-from collections.abc import Callable
 import dataclasses
+import fractions
+import io
 import json
 import logging
 from typing import Any, Final
 import uuid
-import av
-import io
-import fractions
-
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
 from aiortc.contrib.media import MediaPlayer
+import av
 from av.frame import Frame
 from av.packet import Packet
 import voluptuous as vol
