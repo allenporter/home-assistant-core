@@ -374,6 +374,7 @@ class PipelineEventType(StrEnum):
     INTENT_END = "intent-end"
     TTS_START = "tts-start"
     TTS_END = "tts-end"
+    TTS_STREAM = "tts-stream"
     ERROR = "error"
 
 
@@ -1203,6 +1204,29 @@ class PipelineRun:
             PipelineEvent(PipelineEventType.TTS_END, {"tts_output": tts_output})
         )
 
+    async def text_to_speech_audio(self, tts_input: str) -> tts.TtsAudioType:
+        """Run text-to-speech portion of pipeline that returns audio data."""
+        self.process_event(
+            PipelineEvent(
+                PipelineEventType.TTS_START,
+                {
+                    "engine": self.tts_engine,
+                    "language": self.pipeline.tts_language,
+                    "voice": self.pipeline.tts_voice,
+                    "tts_input": tts_input,
+                },
+            )
+        )
+        tts_engine = tts.get_engine_instance(self.hass, self.tts_engine)
+        audio = await tts_engine.async_get_tts_audio(
+            tts_input,
+            self.pipeline.tts_language,
+            options=self.tts_options,
+        )
+        self.process_event(
+            PipelineEvent(PipelineEventType.TTS_STREAM, {"audio": audio})
+        )
+
     def _capture_chunk(self, audio_bytes: bytes | None) -> None:
         """Forward audio chunk to various capturing mechanisms."""
         if self.debug_recording_queue is not None:
@@ -1494,7 +1518,7 @@ class PipelineInput:
                     # text-to-speech
                     if current_stage == PipelineStage.TTS:
                         assert tts_input is not None
-                        await self.run.text_to_speech(tts_input)
+                        await self.run.text_to_speech_audio(tts_input)
 
         except PipelineError as err:
             self.run.process_event(

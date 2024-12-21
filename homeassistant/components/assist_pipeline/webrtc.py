@@ -9,8 +9,13 @@ import json
 import logging
 from typing import Any, Final
 import uuid
+import av
+import io
+import fractions
+
 
 from aiortc import MediaStreamTrack, RTCPeerConnection, RTCSessionDescription
+from aiortc.contrib.media import MediaPlayer
 from av.frame import Frame
 from av.packet import Packet
 import voluptuous as vol
@@ -172,6 +177,8 @@ class WebRtcRealtimeSession:
         self.pc_id = f"PeerConnection({uuid.uuid4()})"
         self.pc: RTCPeerConnection | None = None
         self.datachannel = None
+        self.output_track = AudioOutputTrack()
+        self.input_track = AudioInputTrack(pipeline)
 
     def async_attach(self) -> None:
         """Attach WebRTC session to pipeline."""
@@ -211,7 +218,58 @@ class WebRtcRealtimeSession:
 
     def send_pipeline_event(self, event: PipelineEvent) -> None:
         """Send a pipeline event through the WebRTC data channel."""
-        self._log_info("Sending event %s to client", event)
+        self._log_info(
+            "Sending event %s to client (%s)", event.type, PipelineEventType.TTS_STREAM
+        )
+        if event.type == PipelineEventType.TTS_STREAM:
+            # Send raw audio through the audio track rather than publishing a url
+
+            AUDIO_PTIME = 0.020
+
+            async def send_audio():
+                audio_sample_rate = 48000
+                audio_samples = 0
+                audio_time_base = fractions.Fraction(1, audio_sample_rate)
+                audio_resampler = av.AudioResampler(
+                    format="s16",
+                    layout="stereo",
+                    rate=audio_sample_rate,
+                    frame_size=int(audio_sample_rate * AUDIO_PTIME),
+                )
+
+                try:
+                    audio_data = event.data["audio"]
+                    self._log_info(
+                        "Sending audio: %s bytes (%s)",
+                        len(audio_data[1]),
+                        audio_data[0],
+                    )
+                    player = MediaPlayer(io.BytesIO(audio_data[1]))
+                    container = av.open(
+                        file=io.BytesIO(audio_data[1]), format=audio_data[0], mode="r"
+                    )
+                    audio_streams = [
+                        stream for stream in container.streams if stream.type == "audio"
+                    ]
+                    while True:
+                        try:
+                            frame = next(container.decode(*audio_streams))
+                        except StopIteration:
+                            break
+                        for frame in audio_resampler.resample(frame):
+                            # fix timestamps
+                            frame.pts = audio_samples
+                            frame.time_base = audio_time_base
+                            audio_samples += frame.samples
+                            self._log_info("frame.layout.name=%s", frame.layout.name)
+                            await self.output_track.queue.put(frame)
+                except Exception as e:
+                    _LOGGER.error("Error sending audio: %s", e)
+                    return
+
+            self._log_info("Sending TTS Audio Stream")
+            self.hass.create_task(send_audio())
+            return
         result = websocket_api.messages.message_to_json_bytes(dataclasses.asdict(event))
         self.datachannel.send(result)
 
@@ -238,14 +296,12 @@ class WebRtcRealtimeSession:
 
     def _on_track(self, track):
         self._log_info("Track %s received", track.kind)
-
         if track.kind == "audio":
-            audio_track = AudioTrack(self.pipeline)
-            # TODO: Wire up audio track to pipeline
-            self.pc.addTrack(audio_track)
+            # self.pc.addTrack(self.input_track)
+            self.pc.addTrack(self.output_track)
 
 
-class AudioTrack(MediaStreamTrack):
+class AudioInputTrack(MediaStreamTrack):
     """Audio Track."""
 
     kind = "audio"
@@ -254,11 +310,33 @@ class AudioTrack(MediaStreamTrack):
         """Initialize AudioTrack."""
         super().__init__()
         self.pipeline = pipeline
+        self.queue = asyncio.Queue()
 
     async def recv(self) -> Frame | Packet:
         """Receive a frame or packet."""
         _LOGGER.info("AudioTrack.recv; Ignoring packet")
+
         # TODO: Pipe to audio receiver
+
+
+class AudioOutputTrack(MediaStreamTrack):
+    """Audio Output Track."""
+
+    kind = "audio"
+
+    def __init__(self) -> None:
+        """Initialize AudioTrack."""
+        super().__init__()
+        self.queue: asyncio.Queue[Frame | Packet] = asyncio.Queue()
+
+    async def recv(self) -> Frame | Packet:
+        """Receive a frame or packet."""
+        _LOGGER.info("AudioOutputTrack checking queue")
+        data = await self.queue.get()
+        if data is None:
+            self.stop()
+            raise ValueError("AudioTrack stopped")
+        return data
 
 
 async def _run_pipeline(
