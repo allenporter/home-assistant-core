@@ -31,6 +31,7 @@ from homeassistant.components.media_player import (
     SERVICE_PLAY_MEDIA,
 )
 from homeassistant.components.stream import (
+    DOMAIN as STREAM_DOMAIN,
     FORMAT_CONTENT_TYPE,
     OUTPUT_FORMATS,
     Orientation,
@@ -606,9 +607,18 @@ class Camera(Entity, cached_properties=CACHED_PROPERTIES_WITH_ATTR_):
                         DATA_CAMERA_PREFS
                     ].get_dynamic_stream_settings(self.entity_id),
                     stream_label=self.entity_id,
+                    logger=self._stream_logger(),
                 )
                 self.stream.set_update_callback(self.async_write_ha_state)
             return self.stream
+
+    def _stream_logger(self) -> logging.Logger | None:
+        """Return a logger associated with the camera integration."""
+        if self.platform.platform:
+            return logging.getLogger(
+                f"{self.platform.platform.__name__}.{STREAM_DOMAIN}"  # type: ignore[attr-defined]
+            )
+        return None
 
     async def stream_source(self) -> str | None:
         """Return the source of the stream.

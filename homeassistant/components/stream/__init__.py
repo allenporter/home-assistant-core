@@ -225,6 +225,7 @@ def create_stream(
     options: Mapping[str, str | bool | float],
     dynamic_stream_settings: DynamicStreamSettings,
     stream_label: str | None = None,
+    logger: logging.Logger | None = None,
 ) -> Stream:
     """Create a stream with the specified identifier based on the source url.
 
@@ -277,6 +278,7 @@ def create_stream(
         stream_settings=stream_settings,
         dynamic_stream_settings=dynamic_stream_settings,
         stream_label=stream_label,
+        logger=logger,
     )
     hass.data[DOMAIN][ATTR_STREAMS].append(stream)
     return stream
@@ -393,6 +395,7 @@ class Stream:
         stream_settings: StreamSettings,
         dynamic_stream_settings: DynamicStreamSettings,
         stream_label: str | None = None,
+        logger: logging.Logger | None = None,
     ) -> None:
         """Initialize a stream."""
         self.hass = hass
@@ -412,11 +415,12 @@ class Stream:
         )
         self._available: bool = True
         self._update_callback: Callable[[], None] | None = None
-        self._logger = (
-            logging.getLogger(f"{__package__}.stream.{stream_label}")
-            if stream_label
-            else _LOGGER
-        )
+        if logger:
+            self._logger = logger
+        elif stream_label:
+            self._logger = logging.getLogger(f"{__name__}.{stream_label}")
+        else:
+            self._logger = _LOGGER
         self._diagnostics = Diagnostics()
 
     def endpoint_url(self, fmt: str) -> str:
