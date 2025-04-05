@@ -10,7 +10,7 @@ from hassil.recognize import RecognizeResult
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import MATCH_ALL
+from homeassistant.const import CONF_DESCRIPTION, CONF_SELECTOR, MATCH_ALL
 from homeassistant.core import (
     HomeAssistant,
     ServiceCall,
@@ -18,8 +18,8 @@ from homeassistant.core import (
     SupportsResponse,
     callback,
 )
-from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_validation as cv, intent
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers import config_validation as cv, intent, selector
 from homeassistant.helpers.entity_component import EntityComponent
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.loader import bind_hass
@@ -46,6 +46,7 @@ from .const import (
     ATTR_AGENT_ID,
     ATTR_CONVERSATION_ID,
     ATTR_LANGUAGE,
+    ATTR_STRUCTURE,
     ATTR_TEXT,
     DATA_COMPONENT,
     DATA_DEFAULT_ENTITY,
@@ -59,7 +60,13 @@ from .const import (
 from .default_agent import DefaultAgent, async_setup_default_agent
 from .entity import ConversationEntity
 from .http import async_setup as async_setup_conversation_http
-from .models import AbstractConversationAgent, ConversationInput, ConversationResult
+from .models import (
+    AbstractConversationAgent,
+    ConversationInput,
+    ConversationResult,
+    OutputField,
+    OutputStructure,
+)
 from .trace import ConversationTraceEventType, async_conversation_trace_append
 
 __all__ = [
@@ -90,12 +97,21 @@ __all__ = [
 
 _LOGGER = logging.getLogger(__name__)
 
+
+STRUCTURE_FIELD_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_DESCRIPTION): str,
+        vol.Required(CONF_SELECTOR): selector.validate_selector,
+    }
+)
+
 SERVICE_PROCESS_SCHEMA = vol.Schema(
     {
         vol.Required(ATTR_TEXT): cv.string,
         vol.Optional(ATTR_LANGUAGE): cv.string,
         vol.Optional(ATTR_AGENT_ID): agent_id_validator,
         vol.Optional(ATTR_CONVERSATION_ID): cv.string,
+        vol.Optional(ATTR_STRUCTURE): vol.Schema({str: STRUCTURE_FIELD_SCHEMA}),
     }
 )
 
@@ -257,6 +273,28 @@ async def async_handle_intents(
     )
 
 
+def _prepare_output_structure(
+    service: ServiceCall,
+) -> OutputStructure | None:
+    """Prepare the output structure for the service call."""
+    if (structure := service.data.get(ATTR_STRUCTURE)) is None:
+        return None
+    if not service.return_response:
+        raise ServiceValidationError(
+            "Cannot return structured output, the service call must also request response values"
+        )
+    return OutputStructure(
+        fields=[
+            OutputField(
+                name=k,
+                description=v.get(CONF_DESCRIPTION),
+                selector=selector.selector(v[CONF_SELECTOR]),
+            )
+            for k, v in structure.items()
+        ]
+    )
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Register the process service."""
     entity_component = EntityComponent[ConversationEntity](_LOGGER, DOMAIN, hass)
@@ -287,6 +325,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 context=service.context,
                 language=service.data.get(ATTR_LANGUAGE),
                 agent_id=service.data.get(ATTR_AGENT_ID),
+                output_structure=_prepare_output_structure(service),
             )
         except intent.IntentHandleError as err:
             raise HomeAssistantError(f"Error processing {text}: {err}") from err

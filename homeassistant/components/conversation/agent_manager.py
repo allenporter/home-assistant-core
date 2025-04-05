@@ -24,6 +24,7 @@ from .models import (
     AgentInfo,
     ConversationInput,
     ConversationResult,
+    OutputStructure,
 )
 from .trace import (
     ConversationTraceEvent,
@@ -77,6 +78,7 @@ async def async_converse(
     agent_id: str | None = None,
     device_id: str | None = None,
     extra_system_prompt: str | None = None,
+    output_structure: OutputStructure | None = None,
 ) -> ConversationResult:
     """Process text and get intent."""
     if agent_id is None:
@@ -105,6 +107,7 @@ async def async_converse(
         language=language,
         agent_id=agent_id,
         extra_system_prompt=extra_system_prompt,
+        output_structure=output_structure,
     )
     with async_conversation_trace() as trace:
         trace.add_event(

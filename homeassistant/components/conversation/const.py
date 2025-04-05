@@ -22,7 +22,7 @@ ATTR_TEXT = "text"
 ATTR_LANGUAGE = "language"
 ATTR_AGENT_ID = "agent_id"
 ATTR_CONVERSATION_ID = "conversation_id"
-
+ATTR_STRUCTURE = "structure"
 SERVICE_PROCESS = "process"
 SERVICE_RELOAD = "reload"
 
@@ -34,3 +34,4 @@ class ConversationEntityFeature(IntFlag):
     """Supported features of the conversation entity."""
 
     CONTROL = 1
+    STRUCTURED_OUTPUT = 2

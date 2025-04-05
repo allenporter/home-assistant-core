@@ -11,11 +11,11 @@ from syrupy.assertion import SnapshotAssertion
 import voluptuous as vol
 
 from homeassistant.components import conversation, ollama
-from homeassistant.components.conversation import trace
+from homeassistant.components.conversation import OutputField, OutputStructure, trace
 from homeassistant.const import ATTR_SUPPORTED_FEATURES, CONF_LLM_HASS_API, MATCH_ALL
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import intent, llm
+from homeassistant.helpers import intent, llm, selector
 
 from tests.common import MockConfigEntry
 
@@ -650,3 +650,139 @@ async def test_options(
         assert mock_chat.call_count == 1
         args = mock_chat.call_args.kwargs
         assert args.get("options") == expected_options
+
+
+async def test_structured_output(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_init_component,
+) -> None:
+    """Test that structured output is passed correctly to ollama client."""
+    with patch(
+        "ollama.AsyncClient.chat",
+        return_value=stream_generator(
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": '{"name": "Alexa Jones", "age": 34}',
+                }
+            }
+        ),
+    ) as mock_chat:
+        result = await conversation.async_converse(
+            hass,
+            "Please generate a profile for a new user",
+            None,
+            Context(),
+            agent_id="conversation.mock_title",
+            output_structure=OutputStructure(
+                fields=[
+                    OutputField(
+                        name="name",
+                        description="First and last name of the user such as Alice Smith",
+                        selector=selector.TextSelector(),
+                    ),
+                    OutputField(
+                        name="age",
+                        description="Age of the user",
+                        selector=selector.NumberSelector(
+                            {
+                                "min": 0,
+                                "max": 120,
+                            }
+                        ),
+                    ),
+                ],
+            ),
+        )
+
+        assert mock_chat.call_count == 1
+        args = mock_chat.call_args.kwargs
+        prompt = args["messages"][0]["content"]
+
+        assert args["model"] == "test model"
+        assert args["messages"] == [
+            Message(role="system", content=prompt),
+            Message(role="user", content="Please generate a profile for a new user"),
+        ]
+        # The input selector is converted to a json schema
+        assert args["format"] == {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "First and last name of the user such as Alice Smith",
+                },
+                "age": {
+                    "type": "number",
+                    "description": "Age of the user",
+                    "minimum": 0,
+                    "maximum": 120,
+                },
+            },
+        }
+
+        assert result.response.response_type == intent.IntentResponseType.ACTION_DONE, (
+            result
+        )
+        assert result.response.speech["structure"]["speech"] == {
+            "name": "Alexa Jones",
+            "age": 34,
+        }
+
+
+async def test_structured_output_invalid_response(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_init_component,
+) -> None:
+    """Test that structured output is passed correctly to ollama client."""
+    with patch(
+        "ollama.AsyncClient.chat",
+        return_value=stream_generator(
+            {
+                "message": {
+                    "role": "assistant",
+                    "content": '{"name": invalid json}',
+                }
+            }
+        ),
+    ) as mock_chat:
+        result = await conversation.async_converse(
+            hass,
+            "Please generate a profile for a new user",
+            None,
+            Context(),
+            agent_id="conversation.mock_title",
+            output_structure=OutputStructure(
+                fields=[
+                    OutputField(
+                        name="name",
+                        description="First and last name of the user such as Alice Smith",
+                        selector=selector.TextSelector(),
+                    ),
+                ],
+            ),
+        )
+
+        assert mock_chat.call_count == 1
+        args = mock_chat.call_args.kwargs
+        prompt = args["messages"][0]["content"]
+
+        assert args["model"] == "test model"
+        assert args["messages"] == [
+            Message(role="system", content=prompt),
+            Message(role="user", content="Please generate a profile for a new user"),
+        ]
+        assert args["format"] == {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "First and last name of the user such as Alice Smith",
+                },
+            },
+        }
+
+        assert result.response.response_type == intent.IntentResponseType.ERROR, result
+        assert result.response.error_code == "unknown", result

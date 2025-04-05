@@ -166,6 +166,35 @@ async def _transform_stream(
         yield chunk
 
 
+def _output_structure_to_format(
+    structure: conversation.OutputStructure | None,
+) -> dict[str, Any] | None:
+    """Convert selectors into OpenAPI schema."""
+    if structure is None:
+        return None
+    return {
+        "type": "object",
+        "properties": {
+            field.name: {
+                "description": field.description,
+                **llm.selector_serializer(field.selector),
+            }
+            for field in structure.fields
+        },
+    }
+
+
+def _parse_json(speech: str) -> dict[str, Any]:
+    """Set speech structured output response from JSON."""
+    try:
+        return json.loads(speech)
+    except json.JSONDecodeError as err:
+        _LOGGER.info("Failed to parse structured output: %s", speech)
+        raise HomeAssistantError(
+            "Sorry, I had a problem parsing the structured response: {err}"
+        ) from err
+
+
 class OllamaConversationEntity(
     conversation.ConversationEntity, conversation.AbstractConversationAgent
 ):
@@ -253,6 +282,7 @@ class OllamaConversationEntity(
                     # keep_alive requires specifying unit. In this case, seconds
                     keep_alive=f"{settings.get(CONF_KEEP_ALIVE, DEFAULT_KEEP_ALIVE)}s",
                     options={CONF_NUM_CTX: settings.get(CONF_NUM_CTX, DEFAULT_NUM_CTX)},
+                    format=_output_structure_to_format(user_input.output_structure),
                 )
             except (ollama.RequestError, ollama.ResponseError) as err:
                 _LOGGER.error("Unexpected error talking to Ollama server: %s", err)
@@ -278,7 +308,12 @@ class OllamaConversationEntity(
             raise TypeError(
                 f"Unexpected last message type: {type(chat_log.content[-1])}"
             )
-        intent_response.async_set_speech(chat_log.content[-1].content or "")
+        content: str | dict[str, Any] = chat_log.content[-1].content or ""
+        speech_type = intent.SPEECH_TYPE_PLAIN
+        if user_input.output_structure is not None:
+            speech_type = intent.SPEECH_TYPE_STRUCTURE
+            content = _parse_json(chat_log.content[-1].content or "")
+        intent_response.async_set_speech(content, speech_type)
         return conversation.ConversationResult(
             response=intent_response,
             conversation_id=chat_log.conversation_id,

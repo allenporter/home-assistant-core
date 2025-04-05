@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from homeassistant.core import Context
-from homeassistant.helpers import intent
+from homeassistant.helpers import intent, selector
 
 
 @dataclass(frozen=True)
@@ -42,6 +42,9 @@ class ConversationInput:
 
     extra_system_prompt: str | None = None
     """Extra prompt to provide extra info to LLMs how to understand the command."""
+
+    output_structure: OutputStructure | None = None
+    """Selectors that define the output format."""
 
     def as_dict(self) -> dict[str, Any]:
         """Return input as a dict."""
@@ -90,3 +93,25 @@ class AbstractConversationAgent(ABC):
 
     async def async_prepare(self, language: str | None = None) -> None:
         """Load intents for a language."""
+
+
+@dataclass(frozen=True)
+class OutputField:
+    """Container that describes structured output format for a field."""
+
+    name: str
+    """Name of the field."""
+
+    description: str
+    """Description of the field."""
+
+    selector: selector.Selector
+    """Selector that describes the field type."""
+
+
+@dataclass(frozen=True)
+class OutputStructure:
+    """Container that describes the output format."""
+
+    fields: list[OutputField]
+    """List of fields that describe the output format."""

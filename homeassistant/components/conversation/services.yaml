@@ -18,6 +18,14 @@ process:
       example: my_conversation_1
       selector:
         text:
+    structure:
+      advanced: true
+      filter:
+        supported_features:
+          - conversation.ConversationEntityFeature.STRUCTURED_OUTPUT
+      example: '{ "name": { "selector": { "text": }, "description": "Age of the user" } } }, "age": { "selector": { "number": }, "description": "Age of the user" } }'
+      selector:
+        object:
 
 reload:
   fields:

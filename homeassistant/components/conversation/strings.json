@@ -20,6 +20,10 @@
         "conversation_id": {
           "name": "Conversation ID",
           "description": "ID of the conversation, to be able to continue a previous conversation"
+        },
+        "structure": {
+          "name": "Structure",
+          "description": "Require the conversation agent to respond with structured output. The structured should contain a dictionary of input fields and type selectors."
         }
       }
     },

@@ -67,6 +67,7 @@ DATA_KEY: HassKey[dict[str, IntentHandler]] = HassKey("intent")
 
 SPEECH_TYPE_PLAIN = "plain"
 SPEECH_TYPE_SSML = "ssml"
+SPEECH_TYPE_STRUCTURE = "structure"
 
 
 @callback
@@ -1408,7 +1409,7 @@ class IntentResponse:
     @callback
     def async_set_speech(
         self,
-        speech: str,
+        speech: str | dict[str, Any],
         speech_type: str = "plain",
         extra_data: Any | None = None,
     ) -> None:

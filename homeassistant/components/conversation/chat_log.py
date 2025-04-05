@@ -40,6 +40,16 @@ def async_get_chat_log(
     chat_log_delta_listener: Callable[[ChatLog, dict], None] | None = None,
 ) -> Generator[ChatLog]:
     """Return chat log for a specific chat session."""
+
+    if (
+        user_input is not None
+        and user_input.output_structure is not None
+        and chat_log_delta_listener is not None
+    ):
+        raise ValueError(
+            "Cannot attach chat log delta listener when output structure is provided"
+        )
+
     # If a chat log is already active and it's the requested conversation ID,
     # return that. We won't update the last updated time in this case.
     if (

@@ -326,7 +326,7 @@ class AssistAPI(API):
             api_prompt=self._async_get_api_prompt(llm_context, exposed_entities),
             llm_context=llm_context,
             tools=self._async_get_tools(llm_context, exposed_entities),
-            custom_serializer=_selector_serializer,
+            custom_serializer=selector_serializer,
         )
 
     @callback
@@ -559,7 +559,7 @@ def _get_exposed_entities(
     return data
 
 
-def _selector_serializer(schema: Any) -> Any:  # noqa: C901
+def selector_serializer(schema: Any) -> Any:  # noqa: C901
     """Convert selectors into OpenAPI schema."""
     if not isinstance(schema, selector.Selector):
         return UNSUPPORTED
