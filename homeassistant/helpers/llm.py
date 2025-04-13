@@ -376,8 +376,10 @@ class AssistAPI(API):
             prompt.append(f"You are in area {area.name} {extra}")
         else:
             prompt.append(
-                "When a user asks to turn on all devices of a specific type, "
-                "ask user to specify an area, unless there is only one device of that type."
+                "When there is only one device of a specific type, you can safely assume "
+                "that the user wants to control that device. "
+                "When there is more than one device of a specific type and a user asks to "
+                "turn on all devices of a specific type, ask user to specify an area."
             )
 
         if not llm_context.device_id or not async_device_supports_timers(
@@ -908,7 +910,7 @@ class GetHomeStateTool(Tool):
     """
 
     name = "get_home_state"
-    description = "Get the current state of all devices in the home. "
+    description = "Useful to get additional detail to help answer the users question. Returns additional detail about devices, entities, and services in the home. This will return additional details about the devices listed in the system prompt such as actual sensor values, current modes of operation, or other information."
 
     async def async_call(
         self,
