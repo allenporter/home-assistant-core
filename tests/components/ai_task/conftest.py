@@ -5,6 +5,8 @@ import pytest
 from homeassistant.components.ai_task import (
     DOMAIN,
     AITaskEntity,
+    GenDataTask,
+    GenDataTaskResult,
     GenTextTask,
     GenTextTaskResult,
 )
@@ -26,6 +28,7 @@ from tests.common import (
 
 TEST_DOMAIN = "test"
 TEST_ENTITY_ID = "ai_task.test_task_entity"
+TEST_STRUCTURE = {"type": "object", "properties": {"key": {"type": "string"}}}
 
 
 class MockAITaskEntity(AITaskEntity):
@@ -37,6 +40,7 @@ class MockAITaskEntity(AITaskEntity):
         """Initialize the mock entity."""
         super().__init__()
         self.mock_generate_text_tasks = []
+        self.mock_generate_data_tasks = []
 
     async def _async_generate_text(
         self, task: GenTextTask, chat_log: ChatLog
@@ -49,6 +53,19 @@ class MockAITaskEntity(AITaskEntity):
         return GenTextTaskResult(
             conversation_id=chat_log.conversation_id,
             result="Mock result",
+        )
+
+    async def _async_generate_data(
+        self, task: GenDataTask, chat_log: ChatLog
+    ) -> GenDataTaskResult:
+        """Mock handling of generate data task."""
+        self.mock_generate_data_tasks.append(task)
+        chat_log.async_add_assistant_content_without_tools(
+            AssistantContent(self.entity_id, '{"mock_result": "data"}')
+        )
+        return GenDataTaskResult(
+            conversation_id=chat_log.conversation_id,
+            result={"mock_result": "data"},
         )
 
 

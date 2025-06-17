@@ -1,5 +1,7 @@
 """Entity for the AI Task integration."""
 
+from collections.abc import AsyncGenerator
+import contextlib
 from typing import final
 
 from homeassistant.components.conversation import (
@@ -14,7 +16,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import dt as dt_util
 
 from .const import DEFAULT_SYSTEM_PROMPT, DOMAIN
-from .task import GenTextTask, GenTextTaskResult
+from .task import GenDataTask, GenDataTaskResult, GenTextTask, GenTextTaskResult
 
 
 class AITaskEntity(RestoreEntity):
@@ -43,13 +45,13 @@ class AITaskEntity(RestoreEntity):
             self.__last_activity = state.state
 
     @final
-    async def internal_async_generate_text(
+    @contextlib.asynccontextmanager
+    async def _async_get_ai_task_chat_log(
         self,
-        task: GenTextTask,
-    ) -> GenTextTaskResult:
-        """Run a gen text task."""
-        self.__last_activity = dt_util.utcnow().isoformat()
-        self.async_write_ha_state()
+        task: GenTextTask | GenDataTask,
+    ) -> AsyncGenerator[ChatLog]:
+        """Context manager used to manage the ChatLog used during an AI Task."""
+        # pylint: disable-next=contextmanager-generator-missing-cleanup
         with (
             async_get_chat_session(self.hass) as session,
             async_get_chat_log(
@@ -71,6 +73,17 @@ class AITaskEntity(RestoreEntity):
 
             chat_log.async_add_user_content(UserContent(task.instructions))
 
+            yield chat_log
+
+    @final
+    async def internal_async_generate_text(
+        self,
+        task: GenTextTask,
+    ) -> GenTextTaskResult:
+        """Run a gen text task."""
+        self.__last_activity = dt_util.utcnow().isoformat()
+        self.async_write_ha_state()
+        async with self._async_get_ai_task_chat_log(task) as chat_log:
             return await self._async_generate_text(task, chat_log)
 
     async def _async_generate_text(
@@ -79,4 +92,23 @@ class AITaskEntity(RestoreEntity):
         chat_log: ChatLog,
     ) -> GenTextTaskResult:
         """Handle a gen text task."""
+        raise NotImplementedError
+
+    @final
+    async def internal_async_generate_data(
+        self,
+        task: GenDataTask,
+    ) -> GenDataTaskResult:
+        """Run a gen data task."""
+        self.__last_activity = dt_util.utcnow().isoformat()
+        self.async_write_ha_state()
+        async with self._async_get_ai_task_chat_log(task) as chat_log:
+            return await self._async_generate_data(task, chat_log)
+
+    async def _async_generate_data(
+        self,
+        task: GenDataTask,
+        chat_log: ChatLog,
+    ) -> GenDataTaskResult:
+        """Handle a gen data task."""
         raise NotImplementedError
