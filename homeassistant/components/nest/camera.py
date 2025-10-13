@@ -344,7 +344,7 @@ class NestGo2rtcEntity(NestCameraBaseEntity):
 
     @property
     def use_stream_for_stills(self) -> bool:
-        """Always use the RTSP stream to generate snapshots."""
+        """Always use the stream to generate snapshots."""
         return True
 
     async def stream_source(self) -> str | None:
