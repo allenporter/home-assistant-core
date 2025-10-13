@@ -30,6 +30,7 @@ from homeassistant.components.camera import (
 from homeassistant.components.stream import CONF_EXTRA_PART_WAIT_TIME
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_track_point_in_utc_time
 from homeassistant.util.dt import utcnow
@@ -62,7 +63,8 @@ async def async_setup_entry(
         if (live_stream := device.traits.get(CameraLiveStreamTrait.NAME)) is None:
             continue
         if StreamingProtocol.WEB_RTC in live_stream.supported_protocols:
-            entities.append(NestWebRTCEntity(device))
+            # entities.append(NestWebRTCEntity(device))
+            entities.append(NestGo2rtcEntity(device, entry))
         elif StreamingProtocol.RTSP in live_stream.supported_protocols:
             entities.append(NestRTSPEntity(device))
 
@@ -329,3 +331,42 @@ class NestWebRTCEntity(NestCameraBaseEntity):
         await super().async_will_remove_from_hass()
         for session_id in list(self._webrtc_sessions.keys()):
             self.close_webrtc_session(session_id)
+
+
+class NestGo2rtcEntity(NestCameraBaseEntity):
+    """Nest WebRTC cameras that use go2rtc."""
+
+    def __init__(self, device: Device, entry: NestConfigEntry) -> None:
+        """Initialize the camera."""
+        super().__init__(device)
+        self._refresh_unsub: Callable[[], None] | None = None
+        self._entry = entry
+
+    @property
+    def use_stream_for_stills(self) -> bool:
+        """Always use the RTSP stream to generate snapshots."""
+        return True
+
+    async def stream_source(self) -> str | None:
+        """Return the source of the stream."""
+        implementation = (
+            await config_entry_oauth2_flow.async_get_config_entry_implementation(
+                self.hass, self._entry
+            )
+        )
+        if not isinstance(
+            implementation, config_entry_oauth2_flow.LocalOAuth2Implementation
+        ):
+            raise TypeError(f"Unexpected auth implementation {implementation}")
+        # nest:?client_id=***&client_secret=***&refresh_token=***&project_id=***&device_id=***
+        client_id = implementation.client_id
+        client_secret = implementation.client_secret
+        refresh_token = self._entry.data["token"]["refresh_token"]
+        project_id = self._entry.data["project_id"]
+        # Strips out "enterprises/project-id/devices/"
+        device_id = self._device.name.split("/")[-1]
+        return (
+            f"nest:?client_id={client_id}&client_secret={client_secret}"
+            f"&refresh_token={refresh_token}&project_id={project_id}"
+            f"&device_id={device_id}"
+        )
