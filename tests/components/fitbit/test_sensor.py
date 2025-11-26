@@ -4,9 +4,8 @@ from collections.abc import Awaitable, Callable
 from http import HTTPStatus
 from typing import Any
 
+import aiohttp
 import pytest
-from requests.exceptions import ConnectionError as RequestsConnectionError
-from requests_mock.mocker import Mocker
 from syrupy.assertion import SnapshotAssertion
 
 from homeassistant.components.fitbit.const import DOMAIN, OAUTH2_TOKEN
@@ -29,6 +28,7 @@ from .conftest import (
 )
 
 from tests.common import MockConfigEntry
+from tests.test_util.aiohttp import AiohttpClientMocker, AiohttpClientMockResponse
 
 DEVICE_RESPONSE_CHARGE_2 = {
     "battery": "Medium",
@@ -57,13 +57,12 @@ def platforms() -> list[str]:
 
 
 @pytest.fixture(autouse=True)
-def mock_token_refresh(requests_mock: Mocker) -> None:
+def mock_token_refresh(aioclient_mock: AiohttpClientMocker) -> None:
     """Test that platform configuration is imported successfully."""
 
-    requests_mock.register_uri(
-        "POST",
+    aioclient_mock.post(
         OAUTH2_TOKEN,
-        status_code=HTTPStatus.OK,
+        status=HTTPStatus.OK,
         json=SERVER_ACCESS_TOKEN,
     )
 
@@ -134,25 +133,25 @@ def mock_token_refresh(requests_mock: Mocker) -> None:
             ["activities/minutesFairlyActive"],
             "sensor.first_l_minutes_fairly_active",
             "activities/minutesFairlyActive",
-            35,
+            "35",
         ),
         (
             ["activities/minutesLightlyActive"],
             "sensor.first_l_minutes_lightly_active",
             "activities/minutesLightlyActive",
-            95,
+            "95",
         ),
         (
             ["activities/minutesSedentary"],
             "sensor.first_l_minutes_sedentary",
             "activities/minutesSedentary",
-            18,
+            "18",
         ),
         (
             ["activities/minutesVeryActive"],
             "sensor.first_l_minutes_very_active",
             "activities/minutesVeryActive",
-            20,
+            "20",
         ),
         (
             ["activities/steps"],
@@ -621,20 +620,18 @@ async def test_settings_scope_config_entry(
     [
         (["heartrate"], {"status_code": HTTPStatus.INTERNAL_SERVER_ERROR}),
         (["heartrate"], {"status_code": HTTPStatus.BAD_REQUEST}),
-        (["heartrate"], {"exc": RequestsConnectionError}),
+        (["heartrate"], {"exc": aiohttp.ClientError()}),
     ],
 )
 async def test_sensor_update_failed(
     hass: HomeAssistant,
     setup_credentials: None,
     integration_setup: Callable[[], Awaitable[bool]],
-    requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
     request_condition: dict[str, Any],
 ) -> None:
     """Test a failed sensor update when talking to the API."""
-
-    requests_mock.register_uri(
-        "GET",
+    aioclient_mock.get(
         TIMESERIES_API_URL_FORMAT.format(resource="activities/heart"),
         **request_condition,
     )
@@ -658,11 +655,11 @@ async def test_sensor_update_failed_requires_reauth(
     hass: HomeAssistant,
     setup_credentials: None,
     integration_setup: Callable[[], Awaitable[bool]],
-    requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Test a sensor update request requires reauth."""
 
-    requests_mock.register_uri(
+    aioclient_mock.get(
         "GET",
         TIMESERIES_API_URL_FORMAT.format(resource="activities/heart"),
         status_code=HTTPStatus.UNAUTHORIZED,
@@ -691,11 +688,11 @@ async def test_sensor_update_success(
     hass: HomeAssistant,
     setup_credentials: None,
     integration_setup: Callable[[], Awaitable[bool]],
-    requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Test API failure for a battery level sensor for devices."""
 
-    requests_mock.register_uri(
+    aioclient_mock.get(
         "GET",
         TIMESERIES_API_URL_FORMAT.format(resource="activities/heart"),
         [
@@ -736,33 +733,10 @@ async def test_device_battery_level_update_failed(
     hass: HomeAssistant,
     setup_credentials: None,
     integration_setup: Callable[[], Awaitable[bool]],
-    requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Test API failure for a battery level sensor for devices."""
-
-    requests_mock.register_uri(
-        "GET",
-        DEVICES_API_URL,
-        [
-            {
-                "status_code": HTTPStatus.OK,
-                "json": [DEVICE_RESPONSE_CHARGE_2],
-            },
-            # Fail when requesting an update
-            {
-                "status_code": HTTPStatus.INTERNAL_SERVER_ERROR,
-                "json": {
-                    "errors": [
-                        {
-                            "errorType": "request",
-                            "message": "An error occurred",
-                        }
-                    ]
-                },
-            },
-        ],
-    )
-
+    aioclient_mock.get(DEVICES_API_URL, json=[DEVICE_RESPONSE_CHARGE_2])
     assert await integration_setup()
 
     state = hass.states.get("sensor.charge_2_battery")
@@ -770,6 +744,19 @@ async def test_device_battery_level_update_failed(
     assert state.state == "Medium"
 
     # Request an update for the entity which will fail
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        DEVICES_API_URL,
+        status=HTTPStatus.INTERNAL_SERVER_ERROR,
+        json={
+            "errors": [
+                {
+                    "errorType": "request",
+                    "message": "An error occurred",
+                }
+            ]
+        },
+    )
     await async_update_entity(hass, "sensor.charge_2_battery")
     await hass.async_block_till_done()
 
@@ -791,28 +778,10 @@ async def test_device_battery_level_reauth_required(
     setup_credentials: None,
     integration_setup: Callable[[], Awaitable[bool]],
     config_entry: MockConfigEntry,
-    requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
 ) -> None:
     """Test API failure requires reauth."""
-
-    requests_mock.register_uri(
-        "GET",
-        DEVICES_API_URL,
-        [
-            {
-                "status_code": HTTPStatus.OK,
-                "json": [DEVICE_RESPONSE_CHARGE_2],
-            },
-            # Fail when requesting an update
-            {
-                "status_code": HTTPStatus.UNAUTHORIZED,
-                "json": {
-                    "errors": [{"errorType": "invalid_grant"}],
-                },
-            },
-        ],
-    )
-
+    aioclient_mock.get(DEVICES_API_URL, json=[DEVICE_RESPONSE_CHARGE_2])
     assert await integration_setup()
 
     state = hass.states.get("sensor.charge_2_battery")
@@ -820,6 +789,18 @@ async def test_device_battery_level_reauth_required(
     assert state.state == "Medium"
 
     # Request an update for the entity which will fail
+    aioclient_mock.clear_requests()
+    aioclient_mock.get(
+        DEVICES_API_URL,
+        status=HTTPStatus.UNAUTHORIZED,
+        json={
+            "errors": [
+                {
+                    "errorType": "invalid_grant",
+                }
+            ]
+        },
+    )
     await async_update_entity(hass, "sensor.charge_2_battery")
     await hass.async_block_till_done()
 

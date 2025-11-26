@@ -7,7 +7,12 @@ from homeassistant.helpers import config_entry_oauth2_flow
 
 from . import api
 from .const import FitbitScope
-from .coordinator import FitbitConfigEntry, FitbitData, FitbitDeviceCoordinator
+from .coordinator import (
+    FitbitConfigEntry,
+    FitbitContext,
+    FitbitData,
+    FitbitDataCoordinator,
+)
 from .exceptions import FitbitApiException, FitbitAuthException
 from .model import config_from_entry_data
 
@@ -32,13 +37,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: FitbitConfigEntry) -> bo
     except FitbitApiException as err:
         raise ConfigEntryNotReady from err
 
-    fitbit_config = config_from_entry_data(entry.data)
-    coordinator: FitbitDeviceCoordinator | None = None
-    if fitbit_config.is_allowed_resource(FitbitScope.DEVICE, "devices/battery"):
-        coordinator = FitbitDeviceCoordinator(hass, entry, fitbit_api)
-        await coordinator.async_config_entry_first_refresh()
+    coordinator = FitbitDataCoordinator(hass, entry, fitbit_api)
+    await coordinator.async_config_entry_first_refresh()
 
-    entry.runtime_data = FitbitData(api=fitbit_api, device_coordinator=coordinator)
+    entry.runtime_data = FitbitContext(api=fitbit_api, coordinator=coordinator)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
