@@ -36,11 +36,13 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     coordinators = config_entry.runtime_data
-
+    devices = []
+    if coordinators.device_manager:
+        devices = await coordinators.device_manager.get_devices()
     return {
         "config_entry": async_redact_data(config_entry.data, TO_REDACT_CONFIG),
-        "coordinators": {
-            f"**REDACTED-{i}**": coordinator.device.diagnostic_data()
-            for i, coordinator in enumerate(coordinators.values())
+        "devices": {
+            f"**REDACTED-{i}**": device.diagnostic_data()
+            for i, device in enumerate(devices)
         },
     }

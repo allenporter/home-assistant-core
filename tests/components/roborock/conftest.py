@@ -1,7 +1,7 @@
 """Global fixtures for Roborock integration."""
 
 import asyncio
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from copy import deepcopy
 import logging
 import pathlib
@@ -509,12 +509,24 @@ def device_manager_fixture(
 @pytest.fixture(name="fake_create_device_manager", autouse=True)
 def fake_create_device_manager_fixture(
     device_manager: AsyncMock,
+    fake_devices: list[FakeDevice],
 ) -> None:
     """Fixture to create a fake device manager."""
     with patch(
         "homeassistant.components.roborock.create_device_manager",
     ) as mock_create_device_manager:
-        mock_create_device_manager.return_value = device_manager
+
+        def create_device_manager(
+            *args: Any,
+            ready_callback: Callable[[RoborockDevice], None] | None = None,
+            **kwargs: Any,
+        ) -> AsyncMock:
+            if ready_callback is not None:
+                for device in fake_devices:
+                    ready_callback(device)
+            return device_manager
+
+        mock_create_device_manager.side_effect = create_device_manager
         yield
 
 

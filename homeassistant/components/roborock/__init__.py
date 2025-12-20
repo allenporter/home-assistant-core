@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
 from datetime import timedelta
 import logging
 from typing import Any
@@ -26,6 +25,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.typing import ConfigType
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
 from .const import (
     CONF_BASE_URL,
@@ -38,6 +38,7 @@ from .const import (
     PLATFORMS,
 )
 from .coordinator import (
+    DeviceDispatcher,
     RoborockB01Q7UpdateCoordinator,
     RoborockB01Q10UpdateCoordinator,
     RoborockConfigEntry,
@@ -74,6 +75,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> 
         user_data=user_data,
         base_url=entry.data[CONF_BASE_URL],
     )
+    entry.runtime_data = RoborockCoordinators()
+    device_listener = DeviceListener(hass, entry)
     cache = CacheStore(hass, entry.entry_id)
     try:
         device_manager = await create_device_manager(
@@ -91,6 +94,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> 
             ),
             mqtt_session_unauthorized_hook=lambda: entry.async_start_reauth(hass),
             prefer_cache=False,
+            ready_callback=device_listener.device_ready_callback,
         )
     except RoborockInvalidCredentials as err:
         raise ConfigEntryAuthFailed(
@@ -121,6 +125,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> 
             translation_key="home_data_fail",
         ) from err
 
+    entry.runtime_data.device_manager = device_manager
+
     async def shutdown_roborock(_: Event | None = None) -> None:
         await asyncio.gather(device_manager.close(), cache.flush())
 
@@ -141,63 +147,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> 
             **get_device_info(device),
         )
 
-    enabled_devices = [
-        device for device in devices if not _is_device_disabled(device_registry, device)
-    ]
-    _LOGGER.debug("%d of %d devices are enabled", len(enabled_devices), len(devices))
-
-    coordinators = await asyncio.gather(
-        *build_setup_functions(hass, entry, enabled_devices, user_data),
-        return_exceptions=True,
-    )
-    v1_coords = [
-        coord
-        for coord in coordinators
-        if isinstance(coord, RoborockDataUpdateCoordinator)
-    ]
-    a01_coords = [
-        coord
-        for coord in coordinators
-        if isinstance(coord, RoborockDataUpdateCoordinatorA01)
-    ]
-    b01_q7_coords = [
-        coord
-        for coord in coordinators
-        if isinstance(coord, RoborockB01Q7UpdateCoordinator)
-    ]
-    b01_q10_coords = [
-        coord
-        for coord in coordinators
-        if isinstance(coord, RoborockB01Q10UpdateCoordinator)
-    ]
-    if (
-        len(v1_coords) + len(a01_coords) + len(b01_q7_coords) + len(b01_q10_coords) == 0
-        and enabled_devices
-    ):
-        raise ConfigEntryNotReady(
-            "No devices were able to successfully setup",
-            translation_domain=DOMAIN,
-            translation_key="no_coordinators",
-        )
-    entry.runtime_data = RoborockCoordinators(
-        v1_coords, a01_coords, b01_q7_coords, b01_q10_coords
-    )
-
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _remove_stale_devices(hass, entry, devices)
 
     return True
-
-
-def _is_device_disabled(
-    device_registry: dr.DeviceRegistry,
-    device: RoborockDevice,
-) -> bool:
-    """Check if a device is disabled in the device registry."""
-    device_entry = device_registry.async_get_device(identifiers={(DOMAIN, device.duid)})
-    return device_entry is not None and device_entry.disabled
-
 
 def _remove_stale_devices(
     hass: HomeAssistant,
@@ -252,86 +206,99 @@ async def async_migrate_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -
     return True
 
 
-def build_setup_functions(
-    hass: HomeAssistant,
-    entry: RoborockConfigEntry,
-    devices: list[RoborockDevice],
-    user_data: UserData,
-) -> list[
-    Coroutine[
-        Any,
-        Any,
+class DeviceListener:
+    """Listener for device ready events.
+
+    This will listen for the device connection to be made available
+    """
+
+    def __init__(self, hass: HomeAssistant, entry: RoborockConfigEntry) -> None:
+        """Initialize the DeviceListener."""
+        self._hass = hass
+        self._entry = entry
+        self._tasks: list[asyncio.Task] = []
+        self._entry.async_on_unload(self.shutdown)
+
+    def device_ready_callback(self, device: RoborockDevice) -> None:
+        """Handle a device becoming ready by creating a coordinator."""
+        device_registry = dr.async_get(hass)
+        device_entry = device_registry.async_get_device(identifiers={(DOMAIN, device.duid)})
+        if device_entry is not None and device_entry.disabled:
+            return
+
+        coord: DataUpdateCoordinator[Any] | None
+        dispatcher: DeviceDispatcher | None
+        coord, dispatcher = self._build_coordinator(device)
+        if coord is None or dispatcher is None:
+            return
+        # Set up the coordinator
+        # XXX: This doesn't work because all the entities expect data to be
+        # available before the entity is created.
+        dispatcher.add_coordinator(device.duid, coord)
+        self._tasks.append(
+            self._entry.async_create_task(
+                self._hass, coord.async_config_entry_first_refresh()
+            )
+        )
+
+    async def shutdown(self) -> None:
+        """Cancel all pending tasks."""
+        for task in self._tasks:
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+    def _build_coordinator(
+        self, device: RoborockDevice
+    ) -> tuple[
         RoborockDataUpdateCoordinator
         | RoborockDataUpdateCoordinatorA01
         | RoborockDataUpdateCoordinatorB01
         | RoborockB01Q10UpdateCoordinator
         | None,
-    ]
-]:
-    """Create a list of setup functions that can later be called asynchronously."""
-    coordinators: list[
-        RoborockDataUpdateCoordinator
-        | RoborockDataUpdateCoordinatorA01
-        | RoborockDataUpdateCoordinatorB01
-        | RoborockB01Q10UpdateCoordinator
-    ] = []
-    for device in devices:
-        _LOGGER.debug("Creating device %s: %s", device.name, device)
+        DeviceDispatcher | None,
+    ]:
+        """Create a coordinator for the device and return the appropriate coordinator/listener."""
+        coordinators = self._entry.runtime_data
+        coord: (
+            RoborockDataUpdateCoordinator
+            | RoborockDataUpdateCoordinatorA01
+            | RoborockDataUpdateCoordinatorB01
+            | RoborockB01Q10UpdateCoordinator
+
+        )
         if device.v1_properties is not None:
-            coordinators.append(
-                RoborockDataUpdateCoordinator(hass, entry, device, device.v1_properties)
+            coord = RoborockDataUpdateCoordinator(
+                self._hass, self._entry, device, device.v1_properties
             )
-        elif device.dyad is not None:
-            coordinators.append(
-                RoborockWetDryVacUpdateCoordinator(hass, entry, device, device.dyad)
+            return coord, coordinators.v1_dispatcher
+        if device.dyad is not None:
+            coord = RoborockWetDryVacUpdateCoordinator(
+                self._hass, self._entry, device, device.dyad
             )
-        elif device.zeo is not None:
-            coordinators.append(
-                RoborockWashingMachineUpdateCoordinator(hass, entry, device, device.zeo)
+            return coord, coordinators.a01_dispatcher
+        if device.zeo is not None:
+            coord = RoborockWashingMachineUpdateCoordinator(
+                self._hass, self._entry, device, device.zeo
             )
-        elif device.b01_q7_properties is not None:
-            coordinators.append(
-                RoborockB01Q7UpdateCoordinator(
-                    hass, entry, device, device.b01_q7_properties
-                )
+            return coord, coordinators.a01_dispatcher
+        if device.b01_q7_properties is not None:
+            coord = RoborockB01Q7UpdateCoordinator(
+                self._hass, self._entry, device, device.b01_q7_properties
             )
-        elif device.b01_q10_properties is not None:
-            coordinators.append(
-                RoborockB01Q10UpdateCoordinator(
-                    hass, entry, device, device.b01_q10_properties
-                )
+            return coord, coordinators.b01_q7_dispatcher
+        if device.b01_q10_properties is not None:
+            coord = RoborockB01Q10UpdateCoordinator(
+                self._hass, self._entry, device, device.b01_q10_properties
             )
-        else:
-            _LOGGER.warning(
-                "Not adding device %s because its protocol version %s or category %s is not supported",
-                device.duid,
-                device.device_info.pv,
-                device.product.category.name,
-            )
-
-    return [setup_coordinator(coordinator) for coordinator in coordinators]
-
-
-async def setup_coordinator(
-    coordinator: RoborockDataUpdateCoordinator
-    | RoborockDataUpdateCoordinatorA01
-    | RoborockDataUpdateCoordinatorB01
-    | RoborockB01Q10UpdateCoordinator,
-) -> (
-    RoborockDataUpdateCoordinator
-    | RoborockDataUpdateCoordinatorA01
-    | RoborockDataUpdateCoordinatorB01
-    | RoborockB01Q10UpdateCoordinator
-    | None
-):
-    """Set up a single coordinator."""
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except ConfigEntryNotReady:
-        await coordinator.async_shutdown()
-        raise
-    else:
-        return coordinator
+            return coord, coordinators.b01_q10_dispatcher
+        _LOGGER.info(
+            "Not adding device %s (duid=%s) because its protocol version %s or category %s is not supported",
+            device.name,
+            device.duid,
+            device.device_info.pv,
+            device.product.category.name,
+        )
+        return None, None
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> bool:

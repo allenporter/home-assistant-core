@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 import logging
 from typing import Any, TypeVar
@@ -11,6 +12,7 @@ from propcache.api import cached_property
 from roborock import B01Props
 from roborock.data import HomeDataScene
 from roborock.devices.device import RoborockDevice
+from roborock.devices.device_manager import DeviceManager
 from roborock.devices.traits.a01 import DyadApi, ZeoApi
 from roborock.devices.traits.b01 import Q7PropertiesApi, Q10PropertiesApi
 from roborock.devices.traits.v1 import PropertiesApi
@@ -58,26 +60,51 @@ MIN_UNAVAILABLE_DURATION = timedelta(minutes=2)
 
 _LOGGER = logging.getLogger(__name__)
 
+_T = TypeVar("_T", bound=DataUpdateCoordinator[Any])
+
+
+class DeviceDispatcher[_T]:
+    """Dispatches available DataUpdateCoordinators to listeners to create entities."""
+
+    def __init__(self) -> None:
+        """Initialize DeviceDispatcher."""
+        self._ready_coordinators: dict[str, _T] = {}
+        self._listeners: list[Callable[[_T], None]] = []
+
+    def async_dispatcher_connect(
+        self, listener: Callable[[_T], None]
+    ) -> Callable[[], None]:
+        """Register a listener to be called when a coordinator is created."""
+        self._listeners.append(listener)
+        for coordinator in self._ready_coordinators.values():
+            listener(coordinator)
+
+        return lambda: self._listeners.remove(listener)
+
+    def add_coordinator(self, duid: str, coordinator: _T) -> None:
+        """Add an available coordinator and notify listeners."""
+        self._ready_coordinators[duid] = coordinator
+        for listener in self._listeners:
+            listener(coordinator)
+
 
 @dataclass
 class RoborockCoordinators:
     """Roborock coordinators type."""
 
-    v1: list[RoborockDataUpdateCoordinator]
-    a01: list[RoborockDataUpdateCoordinatorA01]
-    b01_q7: list[RoborockB01Q7UpdateCoordinator]
-    b01_q10: list[RoborockB01Q10UpdateCoordinator]
-
-    def values(
-        self,
-    ) -> list[
-        RoborockDataUpdateCoordinator
-        | RoborockDataUpdateCoordinatorA01
-        | RoborockB01Q7UpdateCoordinator
-        | RoborockB01Q10UpdateCoordinator
-    ]:
-        """Return all coordinators."""
-        return self.v1 + self.a01 + self.b01_q7 + self.b01_q10
+    v1_dispatcher: DeviceDispatcher[RoborockDataUpdateCoordinator] = field(
+        default_factory=DeviceDispatcher
+    )
+    a01_dispatcher: DeviceDispatcher[RoborockDataUpdateCoordinatorA01] = field(
+        default_factory=DeviceDispatcher
+    )
+    b01_q7_dispatcher: DeviceDispatcher[RoborockB01Q7UpdateCoordinator] = field(
+        default_factory=DeviceDispatcher
+    )
+    b01_q10_dispatcher: DeviceDispatcher[RoborockB01Q10UpdateCoordinator] = field(
+        default_factory=DeviceDispatcher
+    )
+    device_manager: DeviceManager | None = None
 
 
 type RoborockConfigEntry = ConfigEntry[RoborockCoordinators]
@@ -139,6 +166,7 @@ class RoborockDataUpdateCoordinator(DataUpdateCoordinator[DeviceState]):
 
     async def _async_setup(self) -> None:
         """Set up the coordinator."""
+        self._last_home_update_attempt = dt_util.utcnow()
         await self._verify_api()
         try:
             await self.properties_api.status.refresh()
@@ -148,8 +176,6 @@ class RoborockDataUpdateCoordinator(DataUpdateCoordinator[DeviceState]):
                 translation_domain=DOMAIN,
                 translation_key="update_data_fail",
             ) from err
-
-        self._last_home_update_attempt = dt_util.utcnow()
 
         # This populates a cache of maps/rooms so we have the information
         # even for maps that are inactive but is a no-op if we already have

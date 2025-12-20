@@ -108,16 +108,28 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Roborock sensor."""
-    async_add_entities(
-        RoborockVacuum(coordinator) for coordinator in config_entry.runtime_data.v1
+    coordinators = config_entry.runtime_data
+
+    def async_add_vacuum(coordinator: RoborockDataUpdateCoordinator) -> None:
+        async_add_entities([RoborockVacuum(coordinator)])
+
+    config_entry.async_on_unload(
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_vacuum)
     )
-    async_add_entities(
-        RoborockQ7Vacuum(coordinator)
-        for coordinator in config_entry.runtime_data.b01_q7
+    config_entry.async_on_unload(
+        coordinators.b01_q7_dispatcher.async_dispatcher_connect(async_add_vacuum)
     )
-    async_add_entities(
-        RoborockQ10Vacuum(coordinator)
-        for coordinator in config_entry.runtime_data.b01_q10
+    config_entry.async_on_unload(
+        coordinators.b01_q10_dispatcher.async_dispatcher_connect(async_add_vacuum)
+    )
+
+    platform = entity_platform.async_get_current_platform()
+
+    platform.async_register_entity_service(
+        GET_MAPS_SERVICE_NAME,
+        None,
+        RoborockVacuum.get_maps.__name__,
+        supports_response=SupportsResponse.ONLY,
     )
 
 

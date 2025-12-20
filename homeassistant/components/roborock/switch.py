@@ -95,19 +95,24 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Roborock switch platform."""
-    # V1 switches - using trait pattern from HEAD
-    async_add_entities(
-        [
-            RoborockSwitch(
-                f"{description.key}_{coordinator.duid_slug}",
-                coordinator,
-                description,
-                trait,
-            )
-            for coordinator in config_entry.runtime_data.v1
-            for description in SWITCH_DESCRIPTIONS
-            if (trait := description.trait(coordinator.properties_api)) is not None
-        ]
+    coordinators = config_entry.runtime_data
+
+    def async_add_switch(coordinator: RoborockDataUpdateCoordinator) -> None:
+        async_add_entities(
+            [
+                RoborockSwitch(
+                    f"{description.key}_{coordinator.duid_slug}",
+                    coordinator,
+                    description,
+                    trait,
+                )
+                for description in SWITCH_DESCRIPTIONS
+                if (trait := description.trait(coordinator.properties_api)) is not None
+            ]
+        )
+
+    config_entry.async_on_unload(
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_switch)
     )
 
     # A01 switches

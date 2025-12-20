@@ -44,7 +44,6 @@ from .entity import (
     RoborockCoordinatedEntityA01,
     RoborockCoordinatedEntityB01Q7,
     RoborockCoordinatedEntityV1,
-    RoborockEntity,
 )
 from .models import DeviceState
 
@@ -413,43 +412,63 @@ async def async_setup_entry(
     """Set up the Roborock vacuum sensors."""
     coordinators = config_entry.runtime_data
 
-    entities: list[RoborockEntity] = [
-        RoborockSensorEntity(
-            coordinator,
-            description,
+    def async_add_sensor_v1(
+        coordinator: RoborockDataUpdateCoordinator,
+    ) -> None:
+        _LOGGER.debug("Adding Roborock V1 sensors for %s", coordinator.duid_slug)
+        async_add_entities(
+            [
+                RoborockSensorEntity(
+                    coordinator,
+                    description,
+                )
+                for description in SENSOR_DESCRIPTIONS
+                if description.value_fn(coordinator.data) is not None
+            ]
+            + [RoborockCurrentRoom(coordinator)]
         )
-        for coordinator in coordinators.v1
-        for description in SENSOR_DESCRIPTIONS
-        if description.value_fn(coordinator.data) is not None
+
+    def async_add_sensor_a01(
+        coordinator: RoborockDataUpdateCoordinatorA01,
+    ) -> None:
+        async_add_entities(
+            RoborockSensorEntityA01(
+                coordinator,
+                description,
+            )
+            for description in DYAD_SENSOR_DESCRIPTIONS
+            if description.data_protocol in coordinator.request_protocols
+        )
+        async_add_entities(
+            RoborockSensorEntityA01(
+                coordinator,
+                description,
+            )
+            for description in ZEO_SENSOR_DESCRIPTIONS
+            if description.data_protocol in coordinator.request_protocols
+        )
+
+    def async_add_sensor_b01(
+        coordinator: RoborockDataUpdateCoordinatorB01,
+    ) -> None:
+        async_add_entities(
+            RoborockSensorEntityB01(coordinator, description)
+            for description in Q7_B01_SENSOR_DESCRIPTIONS
+            if description.value_fn(coordinator.data) is not None
+        )
+
+    unsubs = [
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_sensor_v1),
+        coordinators.a01_dispatcher.async_dispatcher_connect(async_add_sensor_a01),
+        coordinators.b01_dispatcher.async_dispatcher_connect(async_add_sensor_b01),
     ]
-    entities.extend(RoborockCurrentRoom(coordinator) for coordinator in coordinators.v1)
-    entities.extend(
-        RoborockSensorEntityA01(
-            coordinator,
-            description,
-        )
-        for coordinator in coordinators.a01
-        if isinstance(coordinator, RoborockWetDryVacUpdateCoordinator)
-        for description in DYAD_SENSOR_DESCRIPTIONS
-        if description.data_protocol in coordinator.request_protocols
-    )
-    entities.extend(
-        RoborockSensorEntityA01(
-            coordinator,
-            description,
-        )
-        for coordinator in coordinators.a01
-        if isinstance(coordinator, RoborockWashingMachineUpdateCoordinator)
-        for description in ZEO_SENSOR_DESCRIPTIONS
-        if description.data_protocol in coordinator.request_protocols
-    )
-    entities.extend(
-        RoborockSensorEntityB01Q7(coordinator, description)
-        for coordinator in coordinators.b01_q7
-        for description in Q7_B01_SENSOR_DESCRIPTIONS
-        if description.value_fn(coordinator.data) is not None
-    )
-    async_add_entities(entities)
+
+    def async_disconnect() -> None:
+        """Remove all sensors."""
+        for unsub in unsubs:
+            unsub()
+
+    config_entry.async_on_unload(async_disconnect)
 
 
 class RoborockSensorEntity(RoborockCoordinatedEntityV1, SensorEntity):

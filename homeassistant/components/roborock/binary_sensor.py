@@ -152,26 +152,32 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the Roborock vacuum binary sensors."""
-    entities: list[BinarySensorEntity] = [
-        RoborockBinarySensorEntity(
-            coordinator,
-            description,
+    coordinators = config_entry.runtime_data
+
+    def async_add_binary_sensor(coordinator: RoborockDataUpdateCoordinator) -> None:
+        async_add_entities(
+            RoborockBinarySensorEntity(
+                coordinator,
+                description,
+            )
+            for description in BINARY_SENSOR_DESCRIPTIONS
+            if description.value_fn(coordinator.data) is not None
         )
-        for coordinator in config_entry.runtime_data.v1
-        for description in BINARY_SENSOR_DESCRIPTIONS
-        if description.value_fn(coordinator.data) is not None
-    ]
-    entities.extend(
-        RoborockBinarySensorEntityA01(
-            coordinator,
-            description,
+
+    def async_add_a01_binary_sensor(coordinator: RoborockDataUpdateCoordinatorA01) -> None:
+        async_add_entities(
+            RoborockBinarySensorEntityA01(
+                coordinator,
+                description,
+            )
+            for description in ZEO_BINARY_SENSOR_DESCRIPTIONS
+            if description.data_protocol in coordinator.request_protocols
         )
-        for coordinator in config_entry.runtime_data.a01
-        if isinstance(coordinator, RoborockWashingMachineUpdateCoordinator)
-        for description in ZEO_BINARY_SENSOR_DESCRIPTIONS
-        if description.data_protocol in coordinator.request_protocols
+
+    config_entry.async_on_unload(
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_binary_sensor),
+        coordinators.a01_dispatcher.async_dispatcher_connect(async_add_a01_binary_sensor)
     )
-    async_add_entities(entities)
 
 
 class RoborockBinarySensorEntity(RoborockCoordinatedEntityV1, BinarySensorEntity):

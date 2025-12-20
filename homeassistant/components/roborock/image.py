@@ -28,19 +28,25 @@ async def async_setup_entry(
 ) -> None:
     """Set up Roborock image platform."""
 
-    async_add_entities(
-        (
-            RoborockMap(
-                config_entry,
-                coord,
-                coord.properties_api.home,
-                map_info.map_flag,
-                map_info.name,
-            )
-            for coord in config_entry.runtime_data.v1
-            if coord.properties_api.home is not None
-            for map_info in (coord.properties_api.home.home_map_info or {}).values()
-        ),
+    coordinators = config_entry.runtime_data
+
+    def async_add_image(coordinator: RoborockDataUpdateCoordinator) -> None:
+        home_map_info = coordinator.properties_api.home.home_map_info or {}
+        async_add_entities(
+            (
+                RoborockMap(
+                    config_entry,
+                    coordinator,
+                    coordinator.properties_api.home,
+                    map_info.map_flag,
+                    map_info.name,
+                )
+                for map_info in home_map_info.values()
+            ),
+        )
+
+    config_entry.async_on_unload(
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_image)
     )
 
 

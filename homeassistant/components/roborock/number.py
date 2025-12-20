@@ -58,18 +58,24 @@ async def async_setup_entry(
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up Roborock number platform."""
-    async_add_entities(
-        [
-            RoborockNumberEntity(
-                f"{description.key}_{coordinator.duid_slug}",
-                coordinator=coordinator,
-                entity_description=description,
-                trait=trait,
-            )
-            for coordinator in config_entry.runtime_data.v1
-            for description in NUMBER_DESCRIPTIONS
-            if (trait := description.trait(coordinator.properties_api)) is not None
-        ]
+    coordinators = config_entry.runtime_data
+
+    def async_add_number(coordinator: RoborockDataUpdateCoordinator) -> None:
+        async_add_entities(
+            [
+                RoborockNumberEntity(
+                    f"{description.key}_{coordinator.duid_slug}",
+                    coordinator=coordinator,
+                    entity_description=description,
+                    trait=trait,
+                )
+                for description in NUMBER_DESCRIPTIONS
+                if (trait := description.trait(coordinator.properties_api)) is not None
+            ]
+        )
+
+    config_entry.async_on_unload(
+        coordinators.v1_dispatcher.async_dispatcher_connect(async_add_number)
     )
 
 
