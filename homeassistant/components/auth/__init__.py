@@ -161,7 +161,7 @@ from homeassistant.loader import bind_hass
 from homeassistant.util import dt as dt_util
 from homeassistant.util.hass_dict import HassKey
 
-from . import indieauth, login_flow, mfa_setup_flow
+from . import client_metadata, indieauth, login_flow, mfa_setup_flow
 
 DOMAIN = "auth"
 
@@ -191,6 +191,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.http.register_view(RevokeTokenView())
     hass.http.register_view(LinkUserView(retrieve_result))
     hass.http.register_view(OAuth2AuthorizeCallbackView())
+    hass.http.register_view(client_metadata.ClientMetadataView())
 
     websocket_api.async_register_command(hass, websocket_current_user)
     websocket_api.async_register_command(hass, websocket_create_long_lived_access_token)

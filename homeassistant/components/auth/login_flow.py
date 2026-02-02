@@ -145,6 +145,8 @@ class WellKnownOAuthInfoView(HomeAssistantView):
             "service_documentation": (
                 "https://developers.home-assistant.io/docs/auth_api"
             ),
+            # NOTE: We have not updated this to actually fetch the metadata
+            "client_id_metadata_document_supported": True,
         }
 
         # Add issuer only when we have a valid base URL (RFC 8414 compliance)
