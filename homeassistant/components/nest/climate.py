@@ -332,10 +332,6 @@ class ThermostatEntity(ClimateEntity):
         """Set new target fan mode."""
         if fan_mode not in self.fan_modes:
             raise ValueError(f"Unsupported fan_mode '{fan_mode}'")
-        if fan_mode == FAN_ON and self.hvac_mode == HVACMode.OFF:
-            raise ValueError(
-                "Cannot turn on fan, please set an HVAC mode (e.g. heat/cool) first"
-            )
         trait = self._device.traits[FanTrait.NAME]
         duration = None
         if fan_mode != FAN_OFF:

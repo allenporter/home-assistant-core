@@ -1091,7 +1091,59 @@ async def test_thermostat_set_fan_when_off(
     auth: FakeAuth,
     create_device: CreateDevice,
 ) -> None:
-    """Test a thermostat enabling the fan."""
+    """Test a thermostat enabling the fan while HVAC mode is off."""
+    create_device.create(
+        {
+            "sdm.devices.traits.Fan": {
+                "timerMode": "OFF",
+            },
+            "sdm.devices.traits.ThermostatHvac": {
+                "status": "OFF",
+            },
+            "sdm.devices.traits.ThermostatMode": {
+                "availableModes": ["HEAT", "COOL", "HEATCOOL", "OFF"],
+                "mode": "OFF",
+            },
+        }
+    )
+    await setup_platform()
+
+    assert len(hass.states.async_all()) == 1
+    thermostat = hass.states.get("climate.my_thermostat")
+    assert thermostat is not None
+    assert thermostat.state == HVACMode.OFF
+    assert thermostat.attributes[ATTR_FAN_MODE] == FAN_OFF
+    assert thermostat.attributes[ATTR_FAN_MODES] == [FAN_ON, FAN_OFF]
+    assert thermostat.attributes[ATTR_SUPPORTED_FEATURES] == (
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
+        | ClimateEntityFeature.FAN_MODE
+        | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.TURN_ON
+    )
+
+    # Fan can be turned on when HVAC is off
+    await common.async_set_fan_mode(hass, FAN_ON, entity_id="climate.my_thermostat")
+    await hass.async_block_till_done()
+
+    assert auth.method == "post"
+    assert auth.url == DEVICE_COMMAND
+    assert auth.json == {
+        "command": "sdm.devices.commands.Fan.SetTimer",
+        "params": {
+            "duration": "43200s",
+            "timerMode": "ON",
+        },
+    }
+
+
+async def test_thermostat_set_fan_off_when_hvac_off(
+    hass: HomeAssistant,
+    setup_platform: PlatformSetup,
+    auth: FakeAuth,
+    create_device: CreateDevice,
+) -> None:
+    """Test turning off the fan while HVAC mode is off."""
     create_device.create(
         {
             "sdm.devices.traits.Fan": {
@@ -1115,17 +1167,17 @@ async def test_thermostat_set_fan_when_off(
     assert thermostat.state == HVACMode.OFF
     assert thermostat.attributes[ATTR_FAN_MODE] == FAN_ON
     assert thermostat.attributes[ATTR_FAN_MODES] == [FAN_ON, FAN_OFF]
-    assert thermostat.attributes[ATTR_SUPPORTED_FEATURES] == (
-        ClimateEntityFeature.TARGET_TEMPERATURE
-        | ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
-        | ClimateEntityFeature.FAN_MODE
-        | ClimateEntityFeature.TURN_OFF
-        | ClimateEntityFeature.TURN_ON
-    )
 
-    # Fan cannot be turned on when HVAC is off
-    with pytest.raises(ValueError):
-        await common.async_set_fan_mode(hass, FAN_ON, entity_id="climate.my_thermostat")
+    # Fan can be turned off when HVAC is off
+    await common.async_set_fan_mode(hass, FAN_OFF, entity_id="climate.my_thermostat")
+    await hass.async_block_till_done()
+
+    assert auth.method == "post"
+    assert auth.url == DEVICE_COMMAND
+    assert auth.json == {
+        "command": "sdm.devices.commands.Fan.SetTimer",
+        "params": {"timerMode": "OFF"},
+    }
 
 
 async def test_thermostat_fan_empty(
