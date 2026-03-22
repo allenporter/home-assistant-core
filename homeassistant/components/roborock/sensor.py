@@ -37,8 +37,6 @@ from .coordinator import (
     RoborockConfigEntry,
     RoborockDataUpdateCoordinator,
     RoborockDataUpdateCoordinatorA01,
-    RoborockWashingMachineUpdateCoordinator,
-    RoborockWetDryVacUpdateCoordinator,
 )
 from .entity import (
     RoborockCoordinatedEntityA01,
@@ -448,11 +446,11 @@ async def async_setup_entry(
             if description.data_protocol in coordinator.request_protocols
         )
 
-    def async_add_sensor_b01(
-        coordinator: RoborockDataUpdateCoordinatorB01,
+    def async_add_sensor_b01_q7(
+        coordinator: RoborockB01Q7UpdateCoordinator,
     ) -> None:
         async_add_entities(
-            RoborockSensorEntityB01(coordinator, description)
+            RoborockSensorEntityB01Q7(coordinator, description)
             for description in Q7_B01_SENSOR_DESCRIPTIONS
             if description.value_fn(coordinator.data) is not None
         )
@@ -460,7 +458,9 @@ async def async_setup_entry(
     unsubs = [
         coordinators.v1_dispatcher.async_dispatcher_connect(async_add_sensor_v1),
         coordinators.a01_dispatcher.async_dispatcher_connect(async_add_sensor_a01),
-        coordinators.b01_dispatcher.async_dispatcher_connect(async_add_sensor_b01),
+        coordinators.b01_q7_dispatcher.async_dispatcher_connect(
+            async_add_sensor_b01_q7
+        ),
     ]
 
     def async_disconnect() -> None:

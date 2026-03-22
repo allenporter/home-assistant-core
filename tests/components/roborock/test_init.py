@@ -633,6 +633,62 @@ async def test_dyad_device_unavailable(
 
 @pytest.mark.parametrize("platforms", [[Platform.SENSOR]])
 async def test_disabled_device_no_coordinator(
+    hass: HomeAssistant,
+    mock_roborock_entry: MockConfigEntry,
+    device_registry: DeviceRegistry,
+    entity_registry: EntityRegistry,
+    fake_devices: list[FakeDevice],
+) -> None:
+    """Test that the integration loads successfully when a device is disabled."""
+    # Pre-create the dyad device as disabled
+    dyad_device = next(
+        (device for device in fake_devices if device.dyad is not None),
+        None,
+    )
+    assert dyad_device is not None
+    device_registry.async_get_or_create(
+        config_entry_id=mock_roborock_entry.entry_id,
+        identifiers={(DOMAIN, dyad_device.duid)},
+        name=dyad_device.device_info.name,
+        manufacturer="Roborock",
+        disabled_by=dr.DeviceEntryDisabler.USER,
+    )
+
+    await hass.config_entries.async_setup(mock_roborock_entry.entry_id)
+    await hass.async_block_till_done()
+
+    # The integration should still load successfully
+    assert mock_roborock_entry.state is ConfigEntryState.LOADED
+
+    # The disabled dyad device should not have any entities
+    dyad_device_entry = device_registry.async_get_device(
+        identifiers={(DOMAIN, dyad_device.duid)}
+    )
+    assert dyad_device_entry is not None
+    assert dyad_device_entry.disabled
+    dyad_entities = er.async_entries_for_device(
+        entity_registry, dyad_device_entry.id, include_disabled_entities=True
+    )
+    assert len(dyad_entities) == 0
+
+    # Other devices should have entities
+    all_entities = er.async_entries_for_config_entry(
+        entity_registry, mock_roborock_entry.entry_id
+    )
+    devices_with_entities = {
+        device_registry.async_get(entity.device_id).name
+        for entity in all_entities
+        if entity.device_id is not None
+    }
+    assert devices_with_entities == {
+        "Roborock S7 MaxV",
+        "Roborock S7 MaxV Dock",
+        "Roborock S7 2",
+        "Roborock S7 2 Dock",
+        "Zeo One",
+        "Roborock Q7",
+    }
+
     states = hass.states.get("sensor.dyad_pro_total_cleaning_time")
     assert states is not None
     assert states.state == "unavailable"
@@ -700,6 +756,7 @@ async def test_devices_available(
         "Dyad Pro",
         "Zeo One",
         "Roborock Q7",
+        "Roborock Q10 S5+",
     }
 
     states = hass.states.get("sensor.zeo_one_countdown")

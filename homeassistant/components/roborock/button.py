@@ -22,7 +22,6 @@ from .coordinator import (
     RoborockConfigEntry,
     RoborockDataUpdateCoordinator,
     RoborockDataUpdateCoordinatorA01,
-    RoborockWashingMachineUpdateCoordinator,
 )
 from .entity import RoborockCoordinatedEntityA01, RoborockEntity, RoborockEntityV1
 
@@ -144,10 +143,11 @@ async def async_setup_entry(
                 ),
             )
         )
-    
 
     config_entry.async_on_unload(
-        coordinators.v1_dispatcher.async_dispatcher_connect(start_add_button_task),
+        coordinators.v1_dispatcher.async_dispatcher_connect(start_add_button_task)
+    )
+    config_entry.async_on_unload(
         coordinators.a01_dispatcher.async_dispatcher_connect(async_add_a01_buttons)
     )
 

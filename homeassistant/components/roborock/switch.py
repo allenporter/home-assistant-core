@@ -111,19 +111,23 @@ async def async_setup_entry(
             ]
         )
 
+    def async_add_a01_switch(coordinator: RoborockDataUpdateCoordinatorA01) -> None:
+        async_add_entities(
+            [
+                RoborockSwitchA01(
+                    coordinator,
+                    description,
+                )
+                for description in A01_SWITCH_DESCRIPTIONS
+                if description.data_protocol in coordinator.request_protocols
+            ]
+        )
+
     config_entry.async_on_unload(
         coordinators.v1_dispatcher.async_dispatcher_connect(async_add_switch)
     )
-
-    # A01 switches
-    async_add_entities(
-        RoborockSwitchA01(
-            coordinator,
-            description,
-        )
-        for coordinator in config_entry.runtime_data.a01
-        for description in A01_SWITCH_DESCRIPTIONS
-        if description.data_protocol in coordinator.request_protocols
+    config_entry.async_on_unload(
+        coordinators.a01_dispatcher.async_dispatcher_connect(async_add_a01_switch)
     )
 
 

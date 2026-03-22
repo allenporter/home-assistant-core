@@ -153,6 +153,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: RoborockConfigEntry) -> 
 
     return True
 
+
 def _remove_stale_devices(
     hass: HomeAssistant,
     entry: RoborockConfigEntry,
@@ -221,8 +222,10 @@ class DeviceListener:
 
     def device_ready_callback(self, device: RoborockDevice) -> None:
         """Handle a device becoming ready by creating a coordinator."""
-        device_registry = dr.async_get(hass)
-        device_entry = device_registry.async_get_device(identifiers={(DOMAIN, device.duid)})
+        device_registry = dr.async_get(self._hass)
+        device_entry = device_registry.async_get_device(
+            identifiers={(DOMAIN, device.duid)}
+        )
         if device_entry is not None and device_entry.disabled:
             return
 
@@ -264,7 +267,6 @@ class DeviceListener:
             | RoborockDataUpdateCoordinatorA01
             | RoborockDataUpdateCoordinatorB01
             | RoborockB01Q10UpdateCoordinator
-
         )
         if device.v1_properties is not None:
             coord = RoborockDataUpdateCoordinator(
