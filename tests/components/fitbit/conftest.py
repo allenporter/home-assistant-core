@@ -222,22 +222,32 @@ def mock_devices(
 
 def timeseries_response(resource: str, value: str) -> dict[str, Any]:
     """Create a timeseries response value."""
-    return {
-        resource: [{"dateTime": datetime.datetime.today().isoformat(), "value": value}]
-    }
+    today = datetime.datetime.today()
+    if resource.startswith("body-"):
+        date_str = today.date().isoformat()
+    else:
+        date_str = today.date().isoformat()
+    return {resource: [{"dateTime": date_str, "value": value}]}
 
 
 @pytest.fixture(name="register_timeseries")
 def mock_register_timeseries(
     requests_mock: Mocker,
+    aioclient_mock: AiohttpClientMocker,
 ) -> Callable[[str, dict[str, Any]], None]:
     """Fixture to setup fake timeseries API responses."""
 
     def register(resource: str, response: dict[str, Any]) -> None:
+        url = TIMESERIES_API_URL_FORMAT.format(resource=resource)
         requests_mock.register_uri(
             "GET",
-            TIMESERIES_API_URL_FORMAT.format(resource=resource),
+            url,
             status_code=HTTPStatus.OK,
+            json=response,
+        )
+        aioclient_mock.get(
+            url,
+            status=HTTPStatus.OK,
             json=response,
         )
 

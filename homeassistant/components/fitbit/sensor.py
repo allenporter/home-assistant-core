@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import datetime
 import logging
@@ -56,9 +56,9 @@ def _distance_value_fn(result: dict[str, Any]) -> int | str:
     return format(float(_default_value_fn(result)), ".2f")
 
 
-def _body_value_fn(result: dict[str, Any]) -> int | str:
+def _body_value_fn(result: Any) -> int | str:
     """Format function for body values."""
-    return format(float(_default_value_fn(result)), ".1f")
+    return format(float(result.value), ".1f")
 
 
 def _clock_format_12h(result: dict[str, Any]) -> str:
@@ -117,14 +117,15 @@ def _int_value_or_none(field: str) -> Callable[[dict[str, Any]], int | None]:
     return convert
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class FitbitSensorEntityDescription(SensorEntityDescription):
     """Describes Fitbit sensor entity."""
 
     unit_type: str | None = None
-    value_fn: Callable[[dict[str, Any]], Any] = _default_value_fn
+    value_fn: Callable[[Any], Any] = _default_value_fn
     unit_fn: Callable[[FitbitUnitSystem], str | None] = lambda x: None
     scope: FitbitScope | None = None
+    api_fn: Callable[[FitbitApi, str], Awaitable[Any]] | None = None
 
     @property
     def is_tracker(self) -> bool:
@@ -379,6 +380,7 @@ FITBIT_RESOURCES_LIST: Final[tuple[FitbitSensorEntityDescription, ...]] = (
         scope=FitbitScope.WEIGHT,
         entity_registry_enabled_default=False,
         entity_category=EntityCategory.DIAGNOSTIC,
+        api_fn=lambda api, key: api.async_get_body_time_series(key),
     ),
     FitbitSensorEntityDescription(
         key="body/fat",
@@ -390,6 +392,7 @@ FITBIT_RESOURCES_LIST: Final[tuple[FitbitSensorEntityDescription, ...]] = (
         scope=FitbitScope.WEIGHT,
         entity_registry_enabled_default=False,
         entity_category=EntityCategory.DIAGNOSTIC,
+        api_fn=lambda api, key: api.async_get_body_time_series(key),
     ),
     FitbitSensorEntityDescription(
         key="body/weight",
@@ -399,6 +402,7 @@ FITBIT_RESOURCES_LIST: Final[tuple[FitbitSensorEntityDescription, ...]] = (
         value_fn=_body_value_fn,
         unit_fn=_weight_unit,
         scope=FitbitScope.WEIGHT,
+        api_fn=lambda api, key: api.async_get_body_time_series(key),
     ),
     FitbitSensorEntityDescription(
         key="sleep/awakeningsCount",
@@ -630,9 +634,14 @@ class FitbitSensor(SensorEntity):
     async def async_update(self) -> None:
         """Get the latest data from the Fitbit API and update the states."""
         try:
-            result = await self.api.async_get_latest_time_series(
-                self.entity_description.key
-            )
+            if self.entity_description.api_fn:
+                result = await self.entity_description.api_fn(
+                    self.api, self.entity_description.key
+                )
+            else:
+                result = await self.api.async_get_latest_time_series(
+                    self.entity_description.key
+                )
         except FitbitAuthException:
             self._attr_available = False
             self.config_entry.async_start_reauth(self.hass)

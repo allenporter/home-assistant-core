@@ -8,12 +8,16 @@ from typing import Any, cast
 from fitbit import Fitbit
 from fitbit.exceptions import HTTPException, HTTPUnauthorized
 from fitbit_web_api import ApiClient, Configuration, DevicesApi, UserApi
+from fitbit_web_api.api.body_time_series_api import BodyTimeSeriesApi
 from fitbit_web_api.exceptions import (
     ApiException,
     OpenApiException,
     UnauthorizedException,
 )
 from fitbit_web_api.models.device import Device
+from fitbit_web_api.models.get_body_time_series_response import (
+    GetBodyTimeSeriesResponse,
+)
 from fitbit_web_api.models.user import User
 from requests.exceptions import ConnectionError as RequestsConnectionError
 
@@ -131,6 +135,25 @@ class FitbitApi(ABC):
         key = resource_type.replace("/", "-")
         dated_results: list[dict[str, Any]] = response[key]
         return dated_results[-1]
+
+    async def async_get_body_time_series(self, resource_type: str) -> Any:
+        """Return the body time series for the specified resource type."""
+        unit_system = await self.async_get_unit_system()
+        web_client = await self._async_get_fitbit_web_api()
+        body_api = BodyTimeSeriesApi(web_client)
+
+        async def _body_time_series() -> GetBodyTimeSeriesResponse:
+            return await body_api.get_body_resource_by_date_period(
+                var_resource_path=resource_type.removeprefix("body/"),
+                var_date="today",
+                period="7d",
+                _headers={"Accept-Language": str(unit_system)},
+            )
+
+        api_response = await self._run_async(_body_time_series)
+        _LOGGER.debug("body_time_series(%s)=%s", resource_type, api_response.to_dict())
+        attr_name = resource_type.replace("/", "_")
+        return getattr(api_response, attr_name)[-1]
 
     async def _run[_T](self, func: Callable[[], _T]) -> _T:
         """Run client command."""
