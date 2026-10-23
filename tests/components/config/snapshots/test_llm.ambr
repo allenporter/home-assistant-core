@@ -1,0 +1,143 @@
+# serializer version: 1
+# name: test_parameters_openapi
+  dict({
+    'config__configure_flow': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'abort': dict({
+          'default': False,
+          'description': 'Set to true to cancel and abort the flow (default: false).',
+          'type': 'boolean',
+        }),
+        'flow_id': dict({
+          'description': 'The flow_id of the in-progress flow.',
+          'type': 'string',
+        }),
+        'next_step_id': dict({
+          'description': "Menu option key to select when the current step has type 'menu'.",
+          'type': 'string',
+        }),
+        'user_input': dict({
+          'additionalProperties': True,
+          'description': "Field values to submit when the current step has type 'form' (pass {} to confirm an empty form). Omit to fetch the current step state.",
+          'type': 'object',
+        }),
+      }),
+      'required': list([
+        'flow_id',
+      ]),
+      'type': 'object',
+    }),
+    'config__get_config_entries': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'domain': dict({
+          'anyOf': list([
+            dict({
+              'type': 'string',
+            }),
+            dict({
+              'items': dict({
+                'type': 'string',
+              }),
+              'type': 'array',
+            }),
+          ]),
+          'description': "Filter by integration domain (e.g. 'hue', 'zwave_js'). Accepts a single domain or a list of domains.",
+        }),
+        'status': dict({
+          'description': "Filter by status: 'loaded' (working normally), 'error' (failed setup, retrying, migration error, or failed unload), or 'not_loaded'.",
+          'enum': list([
+            'loaded',
+            'error',
+            'not_loaded',
+          ]),
+          'format': 'lower',
+          'type': 'string',
+        }),
+      }),
+      'type': 'object',
+    }),
+    'config__get_flows_in_progress': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'domain': dict({
+          'description': 'Filter in-progress flows by integration domain.',
+          'type': 'string',
+        }),
+      }),
+      'type': 'object',
+    }),
+    'config__reload_config_entry': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'entry_id': dict({
+          'description': 'The entry_id of the config entry to reload.',
+          'type': 'string',
+        }),
+      }),
+      'required': list([
+        'entry_id',
+      ]),
+      'type': 'object',
+    }),
+    'config__search_integrations': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'query': dict({
+          'description': 'Search text to match against integration name, domain, brand, or IoT standard (case-insensitive).',
+          'type': 'string',
+        }),
+        'type': dict({
+          'description': "Filter results by type: 'integration' or 'helper'.",
+          'enum': list([
+            'integration',
+            'helper',
+          ]),
+          'format': 'lower',
+          'type': 'string',
+        }),
+      }),
+      'required': list([
+        'query',
+      ]),
+      'type': 'object',
+    }),
+    'config__start_flow': dict({
+      'additionalProperties': False,
+      'properties': dict({
+        'domain': dict({
+          'description': "Integration domain to set up (required when flow_type is 'config').",
+          'type': 'string',
+        }),
+        'entry_id': dict({
+          'description': "Config entry ID (required when flow_type is 'options', 'reconfigure', or 'subentry').",
+          'type': 'string',
+        }),
+        'flow_type': dict({
+          'description': "Type of flow to start: 'config' (add new integration), 'reconfigure' (update core connection/identity settings on an entry with supports_reconfigure), 'options' (update runtime preferences on an entry with supports_options), or 'subentry' (add or reconfigure a child subentry).",
+          'enum': list([
+            'config',
+            'options',
+            'reconfigure',
+            'subentry',
+          ]),
+          'format': 'lower',
+          'type': 'string',
+        }),
+        'subentry_id': dict({
+          'description': 'Existing subentry ID when reconfiguring a subentry.',
+          'type': 'string',
+        }),
+        'subentry_type': dict({
+          'description': "Subentry type key from supported_subentry_types (required when flow_type is 'subentry' or reconfiguring a subentry).",
+          'type': 'string',
+        }),
+      }),
+      'required': list([
+        'flow_type',
+      ]),
+      'type': 'object',
+    }),
+  })
+# ---
